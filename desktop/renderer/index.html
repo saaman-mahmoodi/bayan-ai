@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bayan - Phase 1 Prototype</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <h1>Bayan</h1>
+        <p>Phase 1: Push-to-talk -> STT -> LLM</p>
+      </header>
+
+      <section class="controls">
+        <button id="pttButton" class="ptt">Hold to Speak</button>
+        <p id="status" class="status">Idle</p>
+      </section>
+
+      <section class="metrics">
+        <h2>Latency</h2>
+        <ul>
+          <li>Capture: <span id="captureMs">0</span> ms</li>
+          <li>STT: <span id="sttMs">0</span> ms</li>
+          <li>LLM: <span id="llmMs">0</span> ms</li>
+          <li>Total: <span id="totalMs">0</span> ms</li>
+        </ul>
+      </section>
+
+      <section class="chat">
+        <h2>Conversation</h2>
+        <div id="messages" class="messages"></div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

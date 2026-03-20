@@ -1,0 +1,15 @@
+{
+  "name": "bayan",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Bayan desktop prototype - Phase 1 core voice loop",
+  "main": "desktop/main.js",
+  "scripts": {
+    "dev:backend": "node backend/src/server.js",
+    "dev:desktop": "electron desktop/main.js",
+    "start": "electron desktop/main.js"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7"
+  }
+}
