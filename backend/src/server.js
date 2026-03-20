@@ -1,9 +1,16 @@
 const http = require("http");
+const fs = require("fs/promises");
+const os = require("os");
+const path = require("path");
+const { spawn } = require("child_process");
 const { performance } = require("perf_hooks");
 
 const PORT = Number(process.env.PORT || 8787);
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3";
+const WHISPER_CPP_BIN = process.env.WHISPER_CPP_BIN || "";
+const WHISPER_MODEL_PATH = process.env.WHISPER_MODEL_PATH || "";
+const FFMPEG_BIN = process.env.FFMPEG_BIN || "";
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
@@ -28,6 +35,106 @@ async function readJsonBody(req) {
   return JSON.parse(raw);
 }
 
+function mimeTypeToExt(mimeType) {
+  if (!mimeType) {
+    return "webm";
+  }
+
+  if (mimeType.includes("wav")) {
+    return "wav";
+  }
+
+  if (mimeType.includes("mpeg") || mimeType.includes("mp3")) {
+    return "mp3";
+  }
+
+  if (mimeType.includes("ogg")) {
+    return "ogg";
+  }
+
+  return "webm";
+}
+
+async function runProcess(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+
+    child.on("error", (error) => {
+      reject(error);
+    });
+
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+
+      reject(new Error(`${command} exited with code ${code}: ${stderr || stdout}`));
+    });
+  });
+}
+
+async function transcribeWithWhisperCpp(audioBase64, mimeType) {
+  if (!WHISPER_CPP_BIN || !WHISPER_MODEL_PATH) {
+    return null;
+  }
+
+  const workDir = await fs.mkdtemp(path.join(os.tmpdir(), "bayan-stt-"));
+  const inputExt = mimeTypeToExt(mimeType);
+  const inputPath = path.join(workDir, `input.${inputExt}`);
+  const wavPath = path.join(workDir, "input.wav");
+  const outPrefix = path.join(workDir, "whisper_out");
+  const outTextPath = `${outPrefix}.txt`;
+
+  try {
+    const audioBuffer = Buffer.from(audioBase64, "base64");
+    await fs.writeFile(inputPath, audioBuffer);
+
+    let sourcePath = inputPath;
+    if (inputExt !== "wav") {
+      if (!FFMPEG_BIN) {
+        throw new Error("FFMPEG_BIN is required for non-wav microphone audio");
+      }
+
+      await runProcess(FFMPEG_BIN, ["-y", "-i", inputPath, wavPath]);
+      sourcePath = wavPath;
+    }
+
+    await runProcess(WHISPER_CPP_BIN, [
+      "-m",
+      WHISPER_MODEL_PATH,
+      "-f",
+      sourcePath,
+      "-of",
+      outPrefix,
+      "-otxt",
+      "-np"
+    ]);
+
+    const transcript = (await fs.readFile(outTextPath, "utf8")).trim();
+    if (!transcript) {
+      throw new Error("Whisper.cpp returned empty transcript");
+    }
+
+    return transcript;
+  } finally {
+    await fs.rm(workDir, { recursive: true, force: true });
+  }
+}
+
 async function transcribeAudio(audioBase64, mimeType) {
   const sttStart = performance.now();
 
@@ -35,16 +142,32 @@ async function transcribeAudio(audioBase64, mimeType) {
     throw new Error("audioBase64 is required");
   }
 
-  // Phase 1 placeholder: replace with whisper.cpp process call.
-  const simulatedTranscript =
-    "I would like to practice speaking about my daily routine.";
+  let transcript = "";
+  let source = "fallback";
+
+  try {
+    const whisperTranscript = await transcribeWithWhisperCpp(audioBase64, mimeType);
+    if (whisperTranscript) {
+      transcript = whisperTranscript;
+      source = "whisper.cpp";
+    }
+  } catch (error) {
+    console.warn(`[bayan-backend] whisper.cpp STT failed: ${error.message}`);
+  }
+
+  if (!transcript) {
+    transcript = "I would like to practice speaking about my daily routine.";
+  }
 
   const sttMs = Math.round(performance.now() - sttStart);
 
   return {
-    transcript: simulatedTranscript,
+    transcript,
     timings: { sttMs },
-    meta: { mimeType: mimeType || "audio/webm" }
+    meta: {
+      mimeType: mimeType || "audio/webm",
+      source
+    }
   };
 }
 
