@@ -18,8 +18,90 @@ function createWindow() {
   window.loadFile(path.join(__dirname, "renderer", "index.html"));
 }
 
+async function backendRequest(endpoint, { method = "GET", body, token } = {}) {
+  const headers = {
+    "Content-Type": "application/json"
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || `${method} ${endpoint} failed`);
+  }
+
+  return payload;
+}
+
+ipcMain.handle("auth:register", async (_event, payload) => {
+  return backendRequest("/api/auth/register", {
+    method: "POST",
+    body: payload
+  });
+});
+
+ipcMain.handle("auth:login", async (_event, payload) => {
+  return backendRequest("/api/auth/login", {
+    method: "POST",
+    body: payload
+  });
+});
+
+ipcMain.handle("auth:logout", async (_event, payload) => {
+  return backendRequest("/api/auth/logout", {
+    method: "POST",
+    token: payload?.token
+  });
+});
+
+ipcMain.handle("auth:me", async (_event, payload) => {
+  return backendRequest("/api/me", {
+    method: "GET",
+    token: payload?.token
+  });
+});
+
+ipcMain.handle("profile:update-preferences", async (_event, payload) => {
+  return backendRequest("/api/preferences", {
+    method: "PUT",
+    token: payload?.token,
+    body: {
+      preferences: payload?.preferences || {}
+    }
+  });
+});
+
+ipcMain.handle("sessions:list", async (_event, payload) => {
+  return backendRequest("/api/sessions", {
+    method: "GET",
+    token: payload?.token
+  });
+});
+
+ipcMain.handle("sessions:get-turns", async (_event, payload) => {
+  const sessionId = Number(payload?.sessionId);
+  if (!sessionId) {
+    throw new Error("sessionId is required");
+  }
+
+  return backendRequest(`/api/sessions/${sessionId}/turns`, {
+    method: "GET",
+    token: payload?.token
+  });
+});
+
 ipcMain.handle("pipeline:process-audio", async (_event, payload) => {
   const totalStart = performance.now();
+  const preferences = payload.preferences || {};
+  const token = payload.token;
 
   const sttResponse = await fetch(`${BACKEND_URL}/api/stt`, {
     method: "POST",
@@ -39,9 +121,14 @@ ipcMain.handle("pipeline:process-audio", async (_event, payload) => {
 
   const chatResponse = await fetch(`${BACKEND_URL}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
     body: JSON.stringify({
-      transcript: sttResult.transcript
+      transcript: sttResult.transcript,
+      preferences,
+      sessionId: payload.sessionId || null
     })
   });
 
@@ -52,16 +139,48 @@ ipcMain.handle("pipeline:process-audio", async (_event, payload) => {
 
   const chatResult = await chatResponse.json();
 
+  let ttsResult = {
+    audioBase64: null,
+    mimeType: null,
+    source: "not-requested"
+  };
+
+  try {
+    const ttsResponse = await fetch(`${BACKEND_URL}/api/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: chatResult.reply })
+    });
+
+    if (ttsResponse.ok) {
+      ttsResult = await ttsResponse.json();
+    }
+  } catch (error) {
+    ttsResult = {
+      audioBase64: null,
+      mimeType: null,
+      source: "error"
+    };
+  }
+
   return {
     transcript: sttResult.transcript,
     reply: chatResult.reply,
+    feedback: chatResult.feedback || {
+      grammarCorrection: "No structured feedback was returned.",
+      pronunciationSuggestions: []
+    },
+    tts: ttsResult,
     timings: {
       sttMs: sttResult.timings?.sttMs || 0,
       llmMs: chatResult.timings?.llmMs || 0,
       totalMs: Math.round(performance.now() - totalStart)
     },
     model: chatResult.model,
-    source: chatResult.source || "unknown"
+    source: chatResult.source || "unknown",
+    sessionId: chatResult.sessionId || payload.sessionId || null,
+    turnId: chatResult.turnId || null,
+    persisted: Boolean(chatResult.persisted)
   };
 });
 

@@ -2,12 +2,16 @@
   "name": "bayan",
   "private": true,
   "version": "0.1.0",
-  "description": "Bayan desktop prototype - Phase 1 core voice loop",
+  "description": "Bayan desktop prototype - Phase 3 auth and persistence",
   "main": "desktop/main.js",
   "scripts": {
     "dev:backend": "node backend/src/server.js",
     "dev:desktop": "electron desktop/main.js",
     "start": "electron desktop/main.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "electron": "^31.7.7"

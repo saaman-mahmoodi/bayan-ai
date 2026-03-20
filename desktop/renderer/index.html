@@ -3,19 +3,52 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bayan - Phase 1 Prototype</title>
+    <title>Bayan - Phase 3 Prototype</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="app">
       <header class="header">
         <h1>Bayan</h1>
-        <p>Phase 1: Push-to-talk -> STT -> LLM</p>
+        <p>Phase 3: Auth + Persistence + Voice Tutor Flow</p>
       </header>
+
+      <section class="auth">
+        <h2>Account</h2>
+        <p id="authStatus" class="status">Signed out</p>
+        <form id="authForm" class="authForm">
+          <label>
+            Email
+            <input id="authEmail" type="email" autocomplete="email" required />
+          </label>
+          <label>
+            Password
+            <input id="authPassword" type="password" autocomplete="current-password" required />
+          </label>
+          <div class="authActions">
+            <button id="loginButton" type="button">Login</button>
+            <button id="registerButton" type="button">Register</button>
+            <button id="logoutButton" type="button">Logout</button>
+          </div>
+        </form>
+      </section>
 
       <section class="controls">
         <button id="pttButton" class="ptt">Hold to Speak</button>
         <p id="status" class="status">Idle</p>
+
+        <form id="preferencesForm" class="preferences">
+          <h2>Language Preferences</h2>
+          <label>
+            Target language
+            <input id="targetLanguage" type="text" value="English" />
+          </label>
+          <label>
+            Native language
+            <input id="nativeLanguage" type="text" value="Arabic" />
+          </label>
+          <button type="submit" class="savePrefs">Save preferences</button>
+        </form>
       </section>
 
       <section class="metrics">
@@ -31,6 +64,27 @@
       <section class="chat">
         <h2>Conversation</h2>
         <div id="messages" class="messages"></div>
+      </section>
+
+      <section class="history">
+        <h2>Session History</h2>
+        <ul id="sessionList" class="sessionList">
+          <li>Sign in to view saved sessions.</li>
+        </ul>
+      </section>
+
+      <section class="feedback">
+        <h2>Tutor Feedback</h2>
+        <article class="feedbackCard">
+          <h3>Grammar correction</h3>
+          <p id="grammarCorrection">No feedback yet.</p>
+        </article>
+        <article class="feedbackCard">
+          <h3>Pronunciation suggestions</h3>
+          <ul id="pronunciationSuggestions">
+            <li>No suggestions yet.</li>
+          </ul>
+        </article>
       </section>
     </main>
 

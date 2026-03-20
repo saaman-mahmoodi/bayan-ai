@@ -1,6 +1,19 @@
 const pttButton = document.getElementById("pttButton");
 const statusEl = document.getElementById("status");
 const messagesEl = document.getElementById("messages");
+const authStatusEl = document.getElementById("authStatus");
+const authForm = document.getElementById("authForm");
+const authEmailEl = document.getElementById("authEmail");
+const authPasswordEl = document.getElementById("authPassword");
+const loginButton = document.getElementById("loginButton");
+const registerButton = document.getElementById("registerButton");
+const logoutButton = document.getElementById("logoutButton");
+const sessionListEl = document.getElementById("sessionList");
+const preferencesForm = document.getElementById("preferencesForm");
+const targetLanguageEl = document.getElementById("targetLanguage");
+const nativeLanguageEl = document.getElementById("nativeLanguage");
+const grammarCorrectionEl = document.getElementById("grammarCorrection");
+const pronunciationSuggestionsEl = document.getElementById("pronunciationSuggestions");
 
 const captureMsEl = document.getElementById("captureMs");
 const sttMsEl = document.getElementById("sttMs");
@@ -11,6 +24,49 @@ let mediaRecorder = null;
 let mediaStream = null;
 let recordingStart = 0;
 let chunks = [];
+let activeToken = "";
+let currentSessionId = null;
+
+const PREFERENCES_STORAGE_KEY = "bayan.preferences.v1";
+const AUTH_STORAGE_KEY = "bayan.auth.v1";
+
+function setAuthStatus(text) {
+  authStatusEl.textContent = text;
+}
+
+function setAuthState({ token = "", user = null } = {}) {
+  activeToken = token;
+
+  if (!token || !user) {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    setAuthStatus("Signed out");
+    return;
+  }
+
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token, user }));
+  setAuthStatus(`Signed in as ${user.email}`);
+}
+
+function loadAuthState() {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) {
+      return { token: "", user: null };
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!parsed?.token || !parsed?.user) {
+      return { token: "", user: null };
+    }
+
+    return {
+      token: String(parsed.token),
+      user: parsed.user
+    };
+  } catch (error) {
+    return { token: "", user: null };
+  }
+}
 
 function setStatus(text) {
   statusEl.textContent = text;
@@ -36,6 +92,81 @@ function appendMessage(role, text, meta = "") {
   }
 
   messagesEl.prepend(wrapper);
+}
+
+function loadPreferences() {
+  try {
+    const raw = localStorage.getItem(PREFERENCES_STORAGE_KEY);
+    if (!raw) {
+      return {
+        targetLanguage: targetLanguageEl.value || "English",
+        nativeLanguage: nativeLanguageEl.value || "Arabic"
+      };
+    }
+
+    const parsed = JSON.parse(raw);
+    return {
+      targetLanguage: parsed.targetLanguage || "English",
+      nativeLanguage: parsed.nativeLanguage || "Arabic"
+    };
+  } catch (error) {
+    return {
+      targetLanguage: "English",
+      nativeLanguage: "Arabic"
+    };
+  }
+}
+
+function savePreferences(preferences) {
+  localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
+}
+
+function getPreferencesFromForm() {
+  return {
+    targetLanguage: (targetLanguageEl.value || "English").trim() || "English",
+    nativeLanguage: (nativeLanguageEl.value || "Arabic").trim() || "Arabic"
+  };
+}
+
+function applyPreferencesToForm(preferences) {
+  targetLanguageEl.value = preferences.targetLanguage;
+  nativeLanguageEl.value = preferences.nativeLanguage;
+}
+
+function clearMessages() {
+  messagesEl.innerHTML = "";
+}
+
+function updateFeedback(feedback) {
+  const grammarText = feedback?.grammarCorrection || "No grammar feedback available.";
+  const suggestions = Array.isArray(feedback?.pronunciationSuggestions)
+    ? feedback.pronunciationSuggestions
+    : [];
+
+  grammarCorrectionEl.textContent = grammarText;
+  pronunciationSuggestionsEl.innerHTML = "";
+
+  if (!suggestions.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "No pronunciation suggestions for this turn.";
+    pronunciationSuggestionsEl.appendChild(empty);
+    return;
+  }
+
+  for (const suggestion of suggestions) {
+    const item = document.createElement("li");
+    item.textContent = suggestion;
+    pronunciationSuggestionsEl.appendChild(item);
+  }
+}
+
+async function playTts(tts) {
+  if (!tts?.audioBase64 || !tts?.mimeType) {
+    return;
+  }
+
+  const audio = new Audio(`data:${tts.mimeType};base64,${tts.audioBase64}`);
+  await audio.play();
 }
 
 async function blobToBase64(blob) {
@@ -103,11 +234,15 @@ async function stopRecording() {
 
   const blob = new Blob(chunks, { type: mediaRecorder.mimeType || "audio/webm" });
   const audioBase64 = await blobToBase64(blob);
+  const preferences = getPreferencesFromForm();
 
   try {
     const result = await window.bayan.processAudio({
       audioBase64,
-      mimeType: blob.type
+      mimeType: blob.type,
+      preferences,
+      token: activeToken || undefined,
+      sessionId: currentSessionId
     });
 
     appendMessage("You", result.transcript);
@@ -116,6 +251,18 @@ async function stopRecording() {
       result.reply,
       `${result.model} (${result.source})`
     );
+    updateFeedback(result.feedback);
+    if (result.sessionId) {
+      currentSessionId = result.sessionId;
+      await refreshSessionList();
+    }
+
+    try {
+      await playTts(result.tts);
+    } catch (error) {
+      setStatus(`Idle (TTS playback failed: ${error.message})`);
+      return;
+    }
 
     sttMsEl.textContent = String(result.timings.sttMs || 0);
     llmMsEl.textContent = String(result.timings.llmMs || 0);
@@ -124,6 +271,152 @@ async function stopRecording() {
   } catch (error) {
     setStatus(`Pipeline error: ${error.message}`);
   }
+}
+
+function renderSessionList(sessions) {
+  sessionListEl.innerHTML = "";
+
+  if (!sessions.length) {
+    const empty = document.createElement("li");
+    empty.textContent = activeToken ? "No saved sessions yet." : "Sign in to view saved sessions.";
+    sessionListEl.appendChild(empty);
+    return;
+  }
+
+  for (const session of sessions) {
+    const item = document.createElement("li");
+    item.className = "sessionItem";
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "sessionButton";
+    button.textContent = `${session.title} (${session.turnCount} turns)`;
+    button.addEventListener("click", () => {
+      void openSession(session.id);
+    });
+
+    item.appendChild(button);
+    sessionListEl.appendChild(item);
+  }
+}
+
+async function refreshSessionList() {
+  if (!activeToken) {
+    renderSessionList([]);
+    return;
+  }
+
+  try {
+    const result = await window.bayan.listSessions({ token: activeToken });
+    renderSessionList(Array.isArray(result.sessions) ? result.sessions : []);
+  } catch (error) {
+    renderSessionList([]);
+    setStatus(`Unable to load sessions: ${error.message}`);
+  }
+}
+
+async function openSession(sessionId) {
+  if (!activeToken) {
+    return;
+  }
+
+  try {
+    const result = await window.bayan.getSessionTurns({
+      token: activeToken,
+      sessionId
+    });
+
+    const turns = Array.isArray(result.turns) ? result.turns : [];
+    clearMessages();
+    for (let index = turns.length - 1; index >= 0; index -= 1) {
+      const turn = turns[index];
+      appendMessage("Bayan", turn.reply, `Saved turn ${turn.id}`);
+      appendMessage("You", turn.transcript);
+    }
+
+    const latestTurn = turns[turns.length - 1];
+    if (latestTurn) {
+      updateFeedback({
+        grammarCorrection: latestTurn.grammarCorrection,
+        pronunciationSuggestions: latestTurn.pronunciationSuggestions
+      });
+    }
+
+    currentSessionId = sessionId;
+    setStatus(`Loaded session #${sessionId}`);
+  } catch (error) {
+    setStatus(`Failed to open session: ${error.message}`);
+  }
+}
+
+async function syncPreferencesToServer(preferences) {
+  if (!activeToken) {
+    return;
+  }
+
+  await window.bayan.updatePreferences({
+    token: activeToken,
+    preferences
+  });
+}
+
+async function hydrateAuthState() {
+  const saved = loadAuthState();
+  if (!saved.token) {
+    setAuthState({ token: "", user: null });
+    return;
+  }
+
+  try {
+    const profile = await window.bayan.me({ token: saved.token });
+    setAuthState({
+      token: saved.token,
+      user: profile.user
+    });
+
+    if (profile.user?.preferences) {
+      applyPreferencesToForm(profile.user.preferences);
+      savePreferences(profile.user.preferences);
+    }
+  } catch (error) {
+    setAuthState({ token: "", user: null });
+  }
+}
+
+async function handleAuth(action) {
+  const email = (authEmailEl.value || "").trim().toLowerCase();
+  const password = authPasswordEl.value || "";
+  if (!email || !password) {
+    setAuthStatus("Email and password are required");
+    return;
+  }
+
+  try {
+    const payload = { email, password, preferences: getPreferencesFromForm() };
+    const result = action === "register" ? await window.bayan.register(payload) : await window.bayan.login(payload);
+    setAuthState({ token: result.token, user: result.user });
+    currentSessionId = null;
+    await refreshSessionList();
+    setStatus(`Authenticated as ${result.user.email}`);
+  } catch (error) {
+    setAuthStatus(`Auth error: ${error.message}`);
+  }
+}
+
+async function handleLogout() {
+  try {
+    if (activeToken) {
+      await window.bayan.logout({ token: activeToken });
+    }
+  } catch (error) {
+    // Ignore logout failures and clear local state regardless.
+  }
+
+  setAuthState({ token: "", user: null });
+  currentSessionId = null;
+  renderSessionList([]);
+  clearMessages();
+  setStatus("Logged out");
 }
 
 pttButton.addEventListener("mousedown", startRecording);
@@ -138,7 +431,42 @@ pttButton.addEventListener("touchend", (event) => {
   stopRecording();
 });
 
+preferencesForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const preferences = getPreferencesFromForm();
+  savePreferences(preferences);
+  void syncPreferencesToServer(preferences)
+    .then(() => {
+      setStatus(`Preferences saved (${preferences.targetLanguage}/${preferences.nativeLanguage})`);
+    })
+    .catch((error) => {
+      setStatus(`Preferences saved locally (server sync failed: ${error.message})`);
+    });
+});
+
+authForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+});
+
+loginButton.addEventListener("click", () => {
+  void handleAuth("login");
+});
+
+registerButton.addEventListener("click", () => {
+  void handleAuth("register");
+});
+
+logoutButton.addEventListener("click", () => {
+  void handleLogout();
+});
+
 window.addEventListener("DOMContentLoaded", async () => {
+  const savedPreferences = loadPreferences();
+  applyPreferencesToForm(savedPreferences);
+
+  await hydrateAuthState();
+  await refreshSessionList();
+
   const config = await window.bayan.getConfig();
   setStatus(`Idle (backend: ${config.backendUrl})`);
 });
