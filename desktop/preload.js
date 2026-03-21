@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld("bayan", {
   updatePreferences: (payload) => ipcRenderer.invoke("profile:update-preferences", payload),
   listSessions: (payload) => ipcRenderer.invoke("sessions:list", payload),
   getSessionTurns: (payload) => ipcRenderer.invoke("sessions:get-turns", payload),
+  startAssessment: (payload) => ipcRenderer.invoke("assessment:start", payload),
+  getLatestAssessment: (payload) => ipcRenderer.invoke("assessment:latest", payload),
+  processAssessmentAudio: (payload) => ipcRenderer.invoke("assessment:process-audio", payload),
   processAudio: (payload) => ipcRenderer.invoke("pipeline:process-audio", payload),
   getConfig: () => ipcRenderer.invoke("pipeline:get-config")
 });

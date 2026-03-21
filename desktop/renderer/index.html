@@ -3,15 +3,34 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bayan - Phase 3 Prototype</title>
+    <title>Bayan - Phase 4 Prototype</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="app">
       <header class="header">
         <h1>Bayan</h1>
-        <p>Phase 3: Auth + Persistence + Voice Tutor Flow</p>
+        <p>Phase 4: Assessment + CEFR + Voice Tutor Flow</p>
       </header>
+
+      <section class="assessment">
+        <h2>Baseline Assessment</h2>
+        <p id="assessmentStatus" class="status">Sign in to start assessment.</p>
+        <button id="startAssessmentButton" type="button" class="assessmentButton">Start Assessment</button>
+        <article class="assessmentPromptCard">
+          <h3>Current Prompt</h3>
+          <p id="assessmentPrompt">No active assessment.</p>
+        </article>
+        <article class="assessmentResultCard">
+          <h3>Latest Result</h3>
+          <p id="assessmentSummary">No assessment completed yet.</p>
+          <ul>
+            <li>Speaking: <span id="assessmentSpeaking">-</span></li>
+            <li>Grammar: <span id="assessmentGrammar">-</span></li>
+            <li>Vocabulary: <span id="assessmentVocabulary">-</span></li>
+          </ul>
+        </article>
+      </section>
 
       <section class="auth">
         <h2>Account</h2>

@@ -29,6 +29,7 @@ body {
   grid-template-columns: 1fr 280px;
   grid-template-areas:
     "header header"
+    "assessment metrics"
     "auth metrics"
     "controls metrics"
     "chat metrics"
@@ -38,6 +39,7 @@ body {
 }
 
 .header,
+.assessment,
 .auth,
 .controls,
 .chat,
@@ -63,6 +65,56 @@ body {
 .header p {
   margin: 8px 0 0;
   color: var(--muted);
+}
+
+.assessment {
+  grid-area: assessment;
+  padding: 20px;
+  display: grid;
+  gap: 10px;
+}
+
+.assessment h2 {
+  margin: 0;
+}
+
+.assessmentButton {
+  border: 0;
+  border-radius: 8px;
+  background: #e3f4f7;
+  color: #0a6170;
+  padding: 10px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.assessmentPromptCard,
+.assessmentResultCard {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: #fbfdff;
+}
+
+.assessmentPromptCard h3,
+.assessmentResultCard h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.assessmentPromptCard p,
+.assessmentResultCard p,
+.assessmentResultCard ul {
+  margin: 0;
+}
+
+.assessmentResultCard ul {
+  padding-left: 18px;
+  margin-top: 8px;
+}
+
+.assessmentResultCard li {
+  margin-bottom: 6px;
 }
 
 .auth {
@@ -295,6 +347,7 @@ body {
     grid-template-columns: 1fr;
     grid-template-areas:
       "header"
+      "assessment"
       "auth"
       "controls"
       "metrics"

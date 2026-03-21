@@ -18,6 +18,12 @@ const PIPER_BIN = process.env.PIPER_BIN || "";
 const PIPER_MODEL_PATH = process.env.PIPER_MODEL_PATH || "";
 const AUTH_SESSION_TTL_DAYS = Number(process.env.AUTH_SESSION_TTL_DAYS || 30);
 const DB_PATH = process.env.BAYAN_DB_PATH || path.join(__dirname, "..", "..", "data", "bayan.sqlite");
+const CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
+const ASSESSMENT_PROMPTS = [
+  "Introduce yourself and describe your daily routine in your target language.",
+  "Tell a short story about a challenge you faced recently and how you handled it.",
+  "Explain your opinion on why learning languages is valuable for your future."
+];
 
 let db;
 
@@ -58,6 +64,214 @@ function dbAll(sql, params = []) {
       resolve(rows || []);
     });
   });
+}
+
+function parseJsonObject(value) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+      return null;
+    }
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+}
+
+function clampScore(value) {
+  const asNumber = Number(value);
+  if (!Number.isFinite(asNumber)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, Math.round(asNumber)));
+}
+
+function scoreToCefrLevel(score) {
+  if (score >= 85) {
+    return "C2";
+  }
+  if (score >= 70) {
+    return "C1";
+  }
+  if (score >= 55) {
+    return "B2";
+  }
+  if (score >= 40) {
+    return "B1";
+  }
+  if (score >= 25) {
+    return "A2";
+  }
+  return "A1";
+}
+
+function tokenizeWords(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^a-zA-Z\s']/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function buildRuleBasedAssessment(turns = []) {
+  const transcripts = turns.map((turn) => String(turn.transcript || "")).filter(Boolean);
+  const allWords = transcripts.flatMap((text) => tokenizeWords(text));
+  const totalWords = allWords.length;
+  const uniqueWords = new Set(allWords).size;
+  const averageWordsPerTurn = transcripts.length ? totalWords / transcripts.length : 0;
+  const longTurnCount = transcripts.filter((text) => tokenizeWords(text).length >= 14).length;
+
+  const speakingScore = clampScore((averageWordsPerTurn / 40) * 100);
+  const grammarScore = clampScore((transcripts.length ? longTurnCount / transcripts.length : 0) * 70 + 20);
+  const vocabularyDensity = totalWords ? uniqueWords / totalWords : 0;
+  const vocabularyScore = clampScore(vocabularyDensity * 130);
+  const overallScore = clampScore(speakingScore * 0.4 + grammarScore * 0.35 + vocabularyScore * 0.25);
+
+  return {
+    cefrLevel: scoreToCefrLevel(overallScore),
+    overallScore,
+    speakingScore,
+    grammarScore,
+    vocabularyScore,
+    reasoning: {
+      source: "rules",
+      totalWords,
+      uniqueWords,
+      averageWordsPerTurn: Math.round(averageWordsPerTurn * 10) / 10,
+      longTurnCount
+    }
+  };
+}
+
+function normalizeAssessmentPayload(payload) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const speakingScore = clampScore(payload.speakingScore);
+  const grammarScore = clampScore(payload.grammarScore);
+  const vocabularyScore = clampScore(payload.vocabularyScore);
+  const overallScore = clampScore(payload.overallScore);
+  const cefrLevel = CEFR_LEVELS.includes(payload.cefrLevel) ? payload.cefrLevel : scoreToCefrLevel(overallScore);
+
+  return {
+    cefrLevel,
+    overallScore,
+    speakingScore,
+    grammarScore,
+    vocabularyScore,
+    reasoning: {
+      source: "llm-rubric",
+      notes: String(payload.notes || "").slice(0, 400)
+    }
+  };
+}
+
+async function buildLlmAssessment(turns = [], preferences = {}) {
+  if (!turns.length) {
+    return null;
+  }
+
+  const targetLanguage = preferences.targetLanguage || "English";
+  const nativeLanguage = preferences.nativeLanguage || "Arabic";
+  const transcriptBlock = turns
+    .map((turn, index) => `${index + 1}. Prompt: ${turn.prompt}\n   Answer: ${turn.transcript}`)
+    .join("\n");
+
+  const prompt = [
+    "You are a strict CEFR assessment evaluator.",
+    `Target language: ${targetLanguage}. Learner native language: ${nativeLanguage}.`,
+    "Given the prompts and learner answers, return ONLY valid JSON with keys:",
+    "cefrLevel, overallScore, speakingScore, grammarScore, vocabularyScore, notes.",
+    "cefrLevel must be one of A1,A2,B1,B2,C1,C2.",
+    "All scores must be integers from 0 to 100.",
+    "Assessment transcript:",
+    transcriptBlock
+  ].join("\n");
+
+  try {
+    const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        prompt,
+        stream: false
+      })
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    const parsed = parseTutorPayload(data.response || "");
+    return normalizeAssessmentPayload(parsed);
+  } catch (error) {
+    return null;
+  }
+}
+
+async function scoreAssessment(turns = [], preferences = {}) {
+  const rules = buildRuleBasedAssessment(turns);
+  const llm = await buildLlmAssessment(turns, preferences);
+
+  if (!llm) {
+    return rules;
+  }
+
+  const speakingScore = clampScore(rules.speakingScore * 0.4 + llm.speakingScore * 0.6);
+  const grammarScore = clampScore(rules.grammarScore * 0.4 + llm.grammarScore * 0.6);
+  const vocabularyScore = clampScore(rules.vocabularyScore * 0.4 + llm.vocabularyScore * 0.6);
+  const overallScore = clampScore(speakingScore * 0.4 + grammarScore * 0.35 + vocabularyScore * 0.25);
+
+  return {
+    cefrLevel: scoreToCefrLevel(overallScore),
+    overallScore,
+    speakingScore,
+    grammarScore,
+    vocabularyScore,
+    reasoning: {
+      source: "hybrid",
+      llm,
+      rules
+    }
+  };
+}
+
+async function getLatestAssessmentForUser(userId) {
+  const result = await dbGet(
+    `
+      SELECT
+        id,
+        assessment_session_id AS assessmentSessionId,
+        cefr_level AS cefrLevel,
+        overall_score AS overallScore,
+        speaking_score AS speakingScore,
+        grammar_score AS grammarScore,
+        vocabulary_score AS vocabularyScore,
+        reasoning,
+        created_at AS createdAt
+      FROM assessment_results
+      WHERE user_id = ?
+      ORDER BY datetime(created_at) DESC, id DESC
+      LIMIT 1
+    `,
+    [userId]
+  );
+
+  if (!result) {
+    return null;
+  }
+
+  return {
+    ...result,
+    reasoning: parseJsonObject(result.reasoning)
+  };
 }
 
 async function initDatabase() {
@@ -137,6 +351,54 @@ async function initDatabase() {
       metric_value REAL NOT NULL,
       recorded_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id)
+    )
+  `);
+
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS assessment_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      target_language TEXT NOT NULL DEFAULT 'English',
+      native_language TEXT NOT NULL DEFAULT 'Arabic',
+      status TEXT NOT NULL DEFAULT 'active',
+      current_prompt_index INTEGER NOT NULL DEFAULT 0,
+      prompt_set TEXT NOT NULL,
+      started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      completed_at TEXT,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    )
+  `);
+
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS assessment_turns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      assessment_session_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      prompt TEXT NOT NULL,
+      transcript TEXT NOT NULL,
+      reply TEXT NOT NULL,
+      grammar_correction TEXT NOT NULL,
+      pronunciation_suggestions TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(assessment_session_id) REFERENCES assessment_sessions(id),
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    )
+  `);
+
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS assessment_results (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      assessment_session_id INTEGER NOT NULL,
+      cefr_level TEXT NOT NULL,
+      overall_score REAL NOT NULL,
+      speaking_score REAL NOT NULL,
+      grammar_score REAL NOT NULL,
+      vocabulary_score REAL NOT NULL,
+      reasoning TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id),
+      FOREIGN KEY(assessment_session_id) REFERENCES assessment_sessions(id)
     )
   `);
 }
@@ -638,6 +900,235 @@ const server = http.createServer(async (req, res) => {
       "Access-Control-Allow-Methods": "POST,GET,PUT,OPTIONS"
     });
     res.end();
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/assessment/start") {
+    try {
+      const auth = await requireAuth(req);
+      const body = await readJsonBody(req);
+      const preferences = await upsertPreferences(auth.user.id, body.preferences || auth.user.preferences || {});
+      const promptSet = JSON.stringify(ASSESSMENT_PROMPTS);
+      const created = await dbRun(
+        `
+          INSERT INTO assessment_sessions (
+            user_id,
+            target_language,
+            native_language,
+            status,
+            current_prompt_index,
+            prompt_set,
+            started_at
+          )
+          VALUES (?, ?, ?, 'active', 0, ?, CURRENT_TIMESTAMP)
+        `,
+        [auth.user.id, preferences.targetLanguage, preferences.nativeLanguage, promptSet]
+      );
+
+      sendJson(res, 201, {
+        assessmentSessionId: created.lastID,
+        currentPromptIndex: 0,
+        totalPrompts: ASSESSMENT_PROMPTS.length,
+        currentPrompt: ASSESSMENT_PROMPTS[0]
+      });
+    } catch (error) {
+      sendJson(res, 401, { error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/assessment/answer") {
+    try {
+      const auth = await requireAuth(req);
+      const body = await readJsonBody(req);
+      const assessmentSessionId = Number(body.assessmentSessionId || 0);
+      if (!assessmentSessionId) {
+        sendJson(res, 400, { error: "assessmentSessionId is required" });
+        return;
+      }
+
+      const session = await dbGet(
+        `
+          SELECT
+            id,
+            user_id AS userId,
+            target_language AS targetLanguage,
+            native_language AS nativeLanguage,
+            status,
+            current_prompt_index AS currentPromptIndex,
+            prompt_set AS promptSet
+          FROM assessment_sessions
+          WHERE id = ? AND user_id = ?
+        `,
+        [assessmentSessionId, auth.user.id]
+      );
+
+      if (!session) {
+        sendJson(res, 404, { error: "assessment session not found" });
+        return;
+      }
+
+      if (session.status !== "active") {
+        sendJson(res, 400, { error: "assessment session is not active" });
+        return;
+      }
+
+      const transcript = String(body.transcript || "").trim();
+      if (!transcript) {
+        sendJson(res, 400, { error: "transcript is required" });
+        return;
+      }
+
+      const prompts = parseJsonList(session.promptSet);
+      const currentPrompt = prompts[session.currentPromptIndex];
+      if (!currentPrompt) {
+        sendJson(res, 400, { error: "assessment prompt set is invalid" });
+        return;
+      }
+
+      const resolvedPreferences = {
+        targetLanguage: session.targetLanguage,
+        nativeLanguage: session.nativeLanguage
+      };
+      const result = await generateReply(transcript, resolvedPreferences);
+
+      await dbRun(
+        `
+          INSERT INTO assessment_turns (
+            assessment_session_id,
+            user_id,
+            prompt,
+            transcript,
+            reply,
+            grammar_correction,
+            pronunciation_suggestions,
+            created_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `,
+        [
+          assessmentSessionId,
+          auth.user.id,
+          currentPrompt,
+          transcript,
+          result.reply,
+          result.feedback.grammarCorrection,
+          JSON.stringify(result.feedback.pronunciationSuggestions || [])
+        ]
+      );
+
+      const nextPromptIndex = session.currentPromptIndex + 1;
+      const totalPrompts = prompts.length;
+
+      if (nextPromptIndex < totalPrompts) {
+        await dbRun(
+          "UPDATE assessment_sessions SET current_prompt_index = ? WHERE id = ?",
+          [nextPromptIndex, assessmentSessionId]
+        );
+
+        sendJson(res, 200, {
+          ...result,
+          assessment: {
+            assessmentSessionId,
+            completed: false,
+            currentPromptIndex: nextPromptIndex,
+            totalPrompts,
+            currentPrompt: prompts[nextPromptIndex]
+          }
+        });
+        return;
+      }
+
+      const turns = await dbAll(
+        `
+          SELECT prompt, transcript
+          FROM assessment_turns
+          WHERE assessment_session_id = ? AND user_id = ?
+          ORDER BY id ASC
+        `,
+        [assessmentSessionId, auth.user.id]
+      );
+
+      const assessmentResult = await scoreAssessment(turns, resolvedPreferences);
+      const createdAssessmentResult = await dbRun(
+        `
+          INSERT INTO assessment_results (
+            user_id,
+            assessment_session_id,
+            cefr_level,
+            overall_score,
+            speaking_score,
+            grammar_score,
+            vocabulary_score,
+            reasoning,
+            created_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `,
+        [
+          auth.user.id,
+          assessmentSessionId,
+          assessmentResult.cefrLevel,
+          assessmentResult.overallScore,
+          assessmentResult.speakingScore,
+          assessmentResult.grammarScore,
+          assessmentResult.vocabularyScore,
+          JSON.stringify(assessmentResult.reasoning || null)
+        ]
+      );
+
+      await dbRun(
+        "UPDATE assessment_sessions SET status = 'completed', current_prompt_index = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+        [nextPromptIndex, assessmentSessionId]
+      );
+
+      await dbRun(
+        "INSERT INTO progress_snapshots (user_id, metric_key, metric_value, recorded_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+        [auth.user.id, "assessment.overall", assessmentResult.overallScore]
+      );
+      await dbRun(
+        "INSERT INTO progress_snapshots (user_id, metric_key, metric_value, recorded_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+        [auth.user.id, "assessment.speaking", assessmentResult.speakingScore]
+      );
+      await dbRun(
+        "INSERT INTO progress_snapshots (user_id, metric_key, metric_value, recorded_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+        [auth.user.id, "assessment.grammar", assessmentResult.grammarScore]
+      );
+      await dbRun(
+        "INSERT INTO progress_snapshots (user_id, metric_key, metric_value, recorded_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+        [auth.user.id, "assessment.vocabulary", assessmentResult.vocabularyScore]
+      );
+
+      sendJson(res, 200, {
+        ...result,
+        assessment: {
+          id: createdAssessmentResult.lastID,
+          assessmentSessionId,
+          completed: true,
+          result: {
+            cefrLevel: assessmentResult.cefrLevel,
+            overallScore: assessmentResult.overallScore,
+            speakingScore: assessmentResult.speakingScore,
+            grammarScore: assessmentResult.grammarScore,
+            vocabularyScore: assessmentResult.vocabularyScore,
+            createdAt: new Date().toISOString()
+          }
+        }
+      });
+    } catch (error) {
+      sendJson(res, 401, { error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/assessment/latest") {
+    try {
+      const auth = await requireAuth(req);
+      const latest = await getLatestAssessmentForUser(auth.user.id);
+      sendJson(res, 200, { assessment: latest });
+    } catch (error) {
+      sendJson(res, 401, { error: error.message });
+    }
     return;
   }
 

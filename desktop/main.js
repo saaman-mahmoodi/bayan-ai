@@ -98,6 +98,104 @@ ipcMain.handle("sessions:get-turns", async (_event, payload) => {
   });
 });
 
+ipcMain.handle("assessment:start", async (_event, payload) => {
+  return backendRequest("/api/assessment/start", {
+    method: "POST",
+    token: payload?.token,
+    body: {
+      preferences: payload?.preferences || {}
+    }
+  });
+});
+
+ipcMain.handle("assessment:latest", async (_event, payload) => {
+  return backendRequest("/api/assessment/latest", {
+    method: "GET",
+    token: payload?.token
+  });
+});
+
+ipcMain.handle("assessment:process-audio", async (_event, payload) => {
+  const totalStart = performance.now();
+
+  const sttResponse = await fetch(`${BACKEND_URL}/api/stt`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      audioBase64: payload.audioBase64,
+      mimeType: payload.mimeType
+    })
+  });
+
+  if (!sttResponse.ok) {
+    const sttError = await sttResponse.json().catch(() => ({ error: "stt_failed" }));
+    throw new Error(sttError.error || "STT request failed");
+  }
+
+  const sttResult = await sttResponse.json();
+
+  const answerResponse = await fetch(`${BACKEND_URL}/api/assessment/answer`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(payload?.token ? { Authorization: `Bearer ${payload.token}` } : {})
+    },
+    body: JSON.stringify({
+      assessmentSessionId: payload.assessmentSessionId,
+      transcript: sttResult.transcript
+    })
+  });
+
+  if (!answerResponse.ok) {
+    const answerError = await answerResponse.json().catch(() => ({ error: "assessment_answer_failed" }));
+    throw new Error(answerError.error || "Assessment answer request failed");
+  }
+
+  const answerResult = await answerResponse.json();
+
+  let ttsResult = {
+    audioBase64: null,
+    mimeType: null,
+    source: "not-requested"
+  };
+
+  try {
+    const ttsResponse = await fetch(`${BACKEND_URL}/api/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: answerResult.reply })
+    });
+
+    if (ttsResponse.ok) {
+      ttsResult = await ttsResponse.json();
+    }
+  } catch (error) {
+    ttsResult = {
+      audioBase64: null,
+      mimeType: null,
+      source: "error"
+    };
+  }
+
+  return {
+    transcript: sttResult.transcript,
+    reply: answerResult.reply,
+    feedback: answerResult.feedback || {
+      grammarCorrection: "No structured feedback was returned.",
+      pronunciationSuggestions: []
+    },
+    assessment: answerResult.assessment,
+    tts: ttsResult,
+    timings: {
+      sttMs: sttResult.timings?.sttMs || 0,
+      llmMs: answerResult.timings?.llmMs || 0,
+      totalMs: Math.round(performance.now() - totalStart)
+    },
+    model: answerResult.model,
+    source: answerResult.source || "unknown"
+  };
+});
+
 ipcMain.handle("pipeline:process-audio", async (_event, payload) => {
   const totalStart = performance.now();
   const preferences = payload.preferences || {};

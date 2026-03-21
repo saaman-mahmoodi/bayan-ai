@@ -1,5 +1,5 @@
 /**
- * Shared request/response contracts for the Phase 3 pipeline.
+ * Shared request/response contracts for the Phase 4 pipeline.
  *
  * /api/stt
  * request: { audioBase64: string, mimeType: string }
@@ -55,9 +55,54 @@
  *     createdAt: string
  *   }[]
  * }
+ *
+ * /api/assessment/start
+ * request: { preferences?: { targetLanguage?: string, nativeLanguage?: string } }
+ * response: {
+ *   assessmentSessionId: number,
+ *   currentPromptIndex: number,
+ *   totalPrompts: number,
+ *   currentPrompt: string
+ * }
+ *
+ * /api/assessment/answer
+ * request: { assessmentSessionId: number, transcript: string }
+ * response: {
+ *   reply: string,
+ *   feedback: { grammarCorrection: string, pronunciationSuggestions: string[] },
+ *   assessment: {
+ *     completed: boolean,
+ *     assessmentSessionId: number,
+ *     currentPromptIndex?: number,
+ *     totalPrompts?: number,
+ *     currentPrompt?: string,
+ *     result?: {
+ *       cefrLevel: 'A1'|'A2'|'B1'|'B2'|'C1'|'C2',
+ *       overallScore: number,
+ *       speakingScore: number,
+ *       grammarScore: number,
+ *       vocabularyScore: number
+ *     }
+ *   }
+ * }
+ *
+ * /api/assessment/latest
+ * request: Authorization: Bearer <token>
+ * response: {
+ *   assessment: {
+ *     assessmentSessionId: number,
+ *     cefrLevel: 'A1'|'A2'|'B1'|'B2'|'C1'|'C2',
+ *     overallScore: number,
+ *     speakingScore: number,
+ *     grammarScore: number,
+ *     vocabularyScore: number,
+ *     createdAt: string,
+ *     reasoning?: object
+ *   } | null
+ * }
  */
 
-const API_CONTRACT_VERSION = "phase3-v1";
+const API_CONTRACT_VERSION = "phase4-v1";
 
 module.exports = {
   API_CONTRACT_VERSION

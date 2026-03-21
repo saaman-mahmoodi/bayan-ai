@@ -14,6 +14,13 @@ const targetLanguageEl = document.getElementById("targetLanguage");
 const nativeLanguageEl = document.getElementById("nativeLanguage");
 const grammarCorrectionEl = document.getElementById("grammarCorrection");
 const pronunciationSuggestionsEl = document.getElementById("pronunciationSuggestions");
+const assessmentStatusEl = document.getElementById("assessmentStatus");
+const startAssessmentButton = document.getElementById("startAssessmentButton");
+const assessmentPromptEl = document.getElementById("assessmentPrompt");
+const assessmentSummaryEl = document.getElementById("assessmentSummary");
+const assessmentSpeakingEl = document.getElementById("assessmentSpeaking");
+const assessmentGrammarEl = document.getElementById("assessmentGrammar");
+const assessmentVocabularyEl = document.getElementById("assessmentVocabulary");
 
 const captureMsEl = document.getElementById("captureMs");
 const sttMsEl = document.getElementById("sttMs");
@@ -26,6 +33,7 @@ let recordingStart = 0;
 let chunks = [];
 let activeToken = "";
 let currentSessionId = null;
+let activeAssessmentSessionId = null;
 
 const PREFERENCES_STORAGE_KEY = "bayan.preferences.v1";
 const AUTH_STORAGE_KEY = "bayan.auth.v1";
@@ -70,6 +78,10 @@ function loadAuthState() {
 
 function setStatus(text) {
   statusEl.textContent = text;
+}
+
+function setAssessmentStatus(text) {
+  assessmentStatusEl.textContent = text;
 }
 
 function appendMessage(role, text, meta = "") {
@@ -135,6 +147,39 @@ function applyPreferencesToForm(preferences) {
 
 function clearMessages() {
   messagesEl.innerHTML = "";
+}
+
+function updateAssessmentPrompt(text) {
+  assessmentPromptEl.textContent = text || "No active assessment.";
+}
+
+function updateAssessmentResultCard(result) {
+  if (!result) {
+    assessmentSummaryEl.textContent = "No assessment completed yet.";
+    assessmentSpeakingEl.textContent = "-";
+    assessmentGrammarEl.textContent = "-";
+    assessmentVocabularyEl.textContent = "-";
+    return;
+  }
+
+  assessmentSummaryEl.textContent = `CEFR ${result.cefrLevel} (overall ${result.overallScore})`;
+  assessmentSpeakingEl.textContent = String(result.speakingScore);
+  assessmentGrammarEl.textContent = String(result.grammarScore);
+  assessmentVocabularyEl.textContent = String(result.vocabularyScore);
+}
+
+async function hydrateLatestAssessment() {
+  if (!activeToken) {
+    updateAssessmentResultCard(null);
+    return;
+  }
+
+  try {
+    const latest = await window.bayan.getLatestAssessment({ token: activeToken });
+    updateAssessmentResultCard(latest.assessment || null);
+  } catch (_error) {
+    updateAssessmentResultCard(null);
+  }
 }
 
 function updateFeedback(feedback) {
@@ -237,13 +282,21 @@ async function stopRecording() {
   const preferences = getPreferencesFromForm();
 
   try {
-    const result = await window.bayan.processAudio({
-      audioBase64,
-      mimeType: blob.type,
-      preferences,
-      token: activeToken || undefined,
-      sessionId: currentSessionId
-    });
+    const isAssessmentTurn = Boolean(activeAssessmentSessionId && activeToken);
+    const result = isAssessmentTurn
+      ? await window.bayan.processAssessmentAudio({
+          audioBase64,
+          mimeType: blob.type,
+          token: activeToken,
+          assessmentSessionId: activeAssessmentSessionId
+        })
+      : await window.bayan.processAudio({
+          audioBase64,
+          mimeType: blob.type,
+          preferences,
+          token: activeToken || undefined,
+          sessionId: currentSessionId
+        });
 
     appendMessage("You", result.transcript);
     appendMessage(
@@ -252,9 +305,23 @@ async function stopRecording() {
       `${result.model} (${result.source})`
     );
     updateFeedback(result.feedback);
-    if (result.sessionId) {
+    if (!isAssessmentTurn && result.sessionId) {
       currentSessionId = result.sessionId;
       await refreshSessionList();
+    }
+
+    if (isAssessmentTurn && result.assessment) {
+      if (result.assessment.completed) {
+        activeAssessmentSessionId = null;
+        updateAssessmentPrompt("No active assessment.");
+        setAssessmentStatus("Assessment completed. Results saved.");
+        updateAssessmentResultCard(result.assessment.result || null);
+      } else {
+        updateAssessmentPrompt(result.assessment.currentPrompt || "No active assessment.");
+        setAssessmentStatus(
+          `Assessment in progress (${result.assessment.currentPromptIndex + 1}/${result.assessment.totalPrompts})`
+        );
+      }
     }
 
     try {
@@ -396,7 +463,11 @@ async function handleAuth(action) {
     const result = action === "register" ? await window.bayan.register(payload) : await window.bayan.login(payload);
     setAuthState({ token: result.token, user: result.user });
     currentSessionId = null;
+    activeAssessmentSessionId = null;
+    updateAssessmentPrompt("No active assessment.");
+    setAssessmentStatus("Ready to start assessment.");
     await refreshSessionList();
+    await hydrateLatestAssessment();
     setStatus(`Authenticated as ${result.user.email}`);
   } catch (error) {
     setAuthStatus(`Auth error: ${error.message}`);
@@ -414,9 +485,37 @@ async function handleLogout() {
 
   setAuthState({ token: "", user: null });
   currentSessionId = null;
+  activeAssessmentSessionId = null;
+  updateAssessmentPrompt("No active assessment.");
+  setAssessmentStatus("Sign in to start assessment.");
+  updateAssessmentResultCard(null);
   renderSessionList([]);
   clearMessages();
   setStatus("Logged out");
+}
+
+async function startAssessment() {
+  if (!activeToken) {
+    setAssessmentStatus("Sign in first to start assessment.");
+    return;
+  }
+
+  try {
+    const preferences = getPreferencesFromForm();
+    const result = await window.bayan.startAssessment({
+      token: activeToken,
+      preferences
+    });
+
+    activeAssessmentSessionId = result.assessmentSessionId;
+    currentSessionId = null;
+    clearMessages();
+    updateAssessmentPrompt(result.currentPrompt || "No active assessment.");
+    setAssessmentStatus(`Assessment in progress (1/${result.totalPrompts})`);
+    setStatus("Assessment started. Hold to speak for each prompt.");
+  } catch (error) {
+    setAssessmentStatus(`Unable to start assessment: ${error.message}`);
+  }
 }
 
 pttButton.addEventListener("mousedown", startRecording);
@@ -460,12 +559,21 @@ logoutButton.addEventListener("click", () => {
   void handleLogout();
 });
 
+startAssessmentButton.addEventListener("click", () => {
+  void startAssessment();
+});
+
 window.addEventListener("DOMContentLoaded", async () => {
   const savedPreferences = loadPreferences();
   applyPreferencesToForm(savedPreferences);
 
   await hydrateAuthState();
   await refreshSessionList();
+  await hydrateLatestAssessment();
+
+  if (activeToken) {
+    setAssessmentStatus("Ready to start assessment.");
+  }
 
   const config = await window.bayan.getConfig();
   setStatus(`Idle (backend: ${config.backendUrl})`);
