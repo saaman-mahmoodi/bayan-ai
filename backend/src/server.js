@@ -19,6 +19,12 @@ const PIPER_MODEL_PATH = process.env.PIPER_MODEL_PATH || "";
 const AUTH_SESSION_TTL_DAYS = Number(process.env.AUTH_SESSION_TTL_DAYS || 30);
 const DB_PATH = process.env.BAYAN_DB_PATH || path.join(__dirname, "..", "..", "data", "bayan.sqlite");
 const CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
+const TRACKED_PROGRESS_METRICS = [
+  "assessment.overall",
+  "assessment.speaking",
+  "assessment.grammar",
+  "assessment.vocabulary"
+];
 const ASSESSMENT_PROMPTS = [
   "Introduce yourself and describe your daily routine in your target language.",
   "Tell a short story about a challenge you faced recently and how you handled it.",
@@ -38,6 +44,294 @@ function dbRun(sql, params = []) {
       resolve({ lastID: this.lastID, changes: this.changes });
     });
   });
+}
+
+function buildRecurringIssueToken(text) {
+  return String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .slice(0, 120);
+}
+
+function diffDays(a, b) {
+  const utcA = Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate());
+  const utcB = Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate());
+  return Math.round((utcA - utcB) / 86400000);
+}
+
+function withTimeout(promise, timeoutMs, timeoutMessage) {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    clearTimeout(timeoutId);
+  });
+}
+
+async function checkFilePathAvailability(filePath) {
+  if (!filePath) {
+    return false;
+  }
+
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function runSystemValidation() {
+  const checks = [];
+
+  const whisperBinAvailable = await checkFilePathAvailability(WHISPER_CPP_BIN);
+  const whisperModelAvailable = await checkFilePathAvailability(WHISPER_MODEL_PATH);
+  const piperBinAvailable = await checkFilePathAvailability(PIPER_BIN);
+  const piperModelAvailable = await checkFilePathAvailability(PIPER_MODEL_PATH);
+  const ffmpegAvailable = await checkFilePathAvailability(FFMPEG_BIN);
+
+  checks.push({
+    key: "whisper.bin",
+    ok: Boolean(WHISPER_CPP_BIN && whisperBinAvailable),
+    required: false,
+    message: WHISPER_CPP_BIN
+      ? whisperBinAvailable
+        ? "Whisper binary found."
+        : "Whisper binary path is configured but not accessible."
+      : "Whisper binary not configured; STT will use fallback transcript."
+  });
+
+  checks.push({
+    key: "whisper.model",
+    ok: Boolean(WHISPER_MODEL_PATH && whisperModelAvailable),
+    required: false,
+    message: WHISPER_MODEL_PATH
+      ? whisperModelAvailable
+        ? "Whisper model file found."
+        : "Whisper model path is configured but not accessible."
+      : "Whisper model not configured; STT will use fallback transcript."
+  });
+
+  checks.push({
+    key: "ffmpeg.bin",
+    ok: Boolean(FFMPEG_BIN && ffmpegAvailable),
+    required: false,
+    message: FFMPEG_BIN
+      ? ffmpegAvailable
+        ? "FFmpeg binary found."
+        : "FFmpeg path is configured but not accessible."
+      : "FFmpeg not configured; non-wav microphone formats may fail with whisper.cpp."
+  });
+
+  checks.push({
+    key: "piper.bin",
+    ok: Boolean(PIPER_BIN && piperBinAvailable),
+    required: false,
+    message: PIPER_BIN
+      ? piperBinAvailable
+        ? "Piper binary found."
+        : "Piper binary path is configured but not accessible."
+      : "Piper binary not configured; TTS will return silent fallback."
+  });
+
+  checks.push({
+    key: "piper.model",
+    ok: Boolean(PIPER_MODEL_PATH && piperModelAvailable),
+    required: false,
+    message: PIPER_MODEL_PATH
+      ? piperModelAvailable
+        ? "Piper model file found."
+        : "Piper model path is configured but not accessible."
+      : "Piper model not configured; TTS will return silent fallback."
+  });
+
+  let ollamaReachable = false;
+  try {
+    const ollamaProbe = await withTimeout(
+      fetch(`${OLLAMA_BASE_URL}/api/tags`, { method: "GET" }),
+      1500,
+      "Ollama probe timed out"
+    );
+    ollamaReachable = ollamaProbe.ok;
+  } catch (_error) {
+    ollamaReachable = false;
+  }
+
+  checks.push({
+    key: "ollama.reachable",
+    ok: ollamaReachable,
+    required: false,
+    message: ollamaReachable
+      ? "Ollama service is reachable."
+      : "Ollama is unreachable; chat and assessment scoring will use fallback logic."
+  });
+
+  const warnings = checks.filter((check) => !check.ok).map((check) => check.message);
+
+  return {
+    ok: warnings.length === 0,
+    checkedAt: new Date().toISOString(),
+    checks,
+    warnings
+  };
+}
+
+async function buildProgressSummary(userId) {
+  const snapshots = await dbAll(
+    `
+      SELECT
+        metric_key AS metricKey,
+        metric_value AS metricValue,
+        recorded_at AS recordedAt
+      FROM progress_snapshots
+      WHERE user_id = ?
+      ORDER BY datetime(recorded_at) DESC, id DESC
+      LIMIT 400
+    `,
+    [userId]
+  );
+
+  const trendsByMetric = new Map();
+  for (const key of TRACKED_PROGRESS_METRICS) {
+    trendsByMetric.set(key, new Map());
+  }
+
+  for (const row of snapshots) {
+    if (!trendsByMetric.has(row.metricKey)) {
+      continue;
+    }
+
+    const day = String(row.recordedAt || "").slice(0, 10);
+    if (!day) {
+      continue;
+    }
+
+    const metricBucket = trendsByMetric.get(row.metricKey);
+    if (!metricBucket.has(day)) {
+      metricBucket.set(day, []);
+    }
+    metricBucket.get(day).push(Number(row.metricValue || 0));
+  }
+
+  const trends = TRACKED_PROGRESS_METRICS.map((metricKey) => {
+    const dayMap = trendsByMetric.get(metricKey);
+    const points = Array.from(dayMap.entries())
+      .map(([day, values]) => {
+        const total = values.reduce((sum, value) => sum + value, 0);
+        const average = values.length ? total / values.length : 0;
+        return {
+          day,
+          value: Math.round(average * 10) / 10
+        };
+      })
+      .sort((a, b) => a.day.localeCompare(b.day))
+      .slice(-14);
+
+    return {
+      metricKey,
+      points
+    };
+  });
+
+  const activityRows = await dbAll(
+    `
+      SELECT day
+      FROM (
+        SELECT date(created_at) AS day
+        FROM practice_turns
+        WHERE user_id = ?
+        UNION
+        SELECT date(created_at) AS day
+        FROM assessment_turns
+        WHERE user_id = ?
+      )
+      WHERE day IS NOT NULL
+      ORDER BY day DESC
+    `,
+    [userId, userId]
+  );
+
+  const activityDays = activityRows.map((row) => row.day);
+  let streakDays = 0;
+  let lastActiveDay = activityDays[0] || null;
+
+  if (lastActiveDay) {
+    const today = new Date();
+    const lastActiveDate = new Date(`${lastActiveDay}T00:00:00.000Z`);
+    const ageInDays = diffDays(today, lastActiveDate);
+
+    if (ageInDays <= 1) {
+      streakDays = 1;
+      let expectedDate = lastActiveDate;
+
+      for (let index = 1; index < activityDays.length; index += 1) {
+        const candidate = new Date(`${activityDays[index]}T00:00:00.000Z`);
+        if (diffDays(expectedDate, candidate) === 1) {
+          streakDays += 1;
+          expectedDate = candidate;
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  const recurringSourceRows = await dbAll(
+    `
+      SELECT grammar_correction AS grammarCorrection, pronunciation_suggestions AS pronunciationSuggestions
+      FROM practice_turns
+      WHERE user_id = ?
+      ORDER BY id DESC
+      LIMIT 120
+    `,
+    [userId]
+  );
+
+  const issueCounts = new Map();
+  for (const row of recurringSourceRows) {
+    const grammar = String(row.grammarCorrection || "").trim();
+    if (grammar) {
+      const token = `grammar:${buildRecurringIssueToken(grammar)}`;
+      if (token.length > 8) {
+        const existing = issueCounts.get(token) || { type: "grammar", text: grammar, count: 0 };
+        existing.count += 1;
+        issueCounts.set(token, existing);
+      }
+    }
+
+    const suggestions = parseJsonList(row.pronunciationSuggestions);
+    for (const suggestion of suggestions) {
+      const text = String(suggestion || "").trim();
+      if (!text) {
+        continue;
+      }
+      const token = `pronunciation:${buildRecurringIssueToken(text)}`;
+      const existing = issueCounts.get(token) || { type: "pronunciation", text, count: 0 };
+      existing.count += 1;
+      issueCounts.set(token, existing);
+    }
+  }
+
+  const recurringIssues = Array.from(issueCounts.values())
+    .filter((issue) => issue.count > 1)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  return {
+    streak: {
+      currentDays: streakDays,
+      lastActiveDay
+    },
+    trends,
+    recurringIssues,
+    totals: {
+      snapshotCount: snapshots.length,
+      activityDays: activityDays.length
+    }
+  };
 }
 
 function dbGet(sql, params = []) {
@@ -1405,15 +1699,43 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && req.url === "/api/validation") {
+    try {
+      const validation = await runSystemValidation();
+      sendJson(res, 200, validation);
+    } catch (error) {
+      sendJson(res, 500, { error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/progress") {
+    try {
+      const auth = await requireAuth(req);
+      const progress = await buildProgressSummary(auth.user.id);
+      sendJson(res, 200, progress);
+    } catch (error) {
+      sendJson(res, 401, { error: error.message });
+    }
+    return;
+  }
+
   sendJson(res, 404, { error: "Not found" });
 });
 
 async function startServer() {
   await initDatabase();
+  console.log(`[bayan-backend] sqlite db at ${DB_PATH}`);
+
+  const startupValidation = await runSystemValidation();
+  if (startupValidation.warnings.length) {
+    for (const warning of startupValidation.warnings) {
+      console.warn(`[bayan-backend] startup validation: ${warning}`);
+    }
+  }
 
   server.listen(PORT, () => {
     console.log(`[bayan-backend] listening on http://127.0.0.1:${PORT}`);
-    console.log(`[bayan-backend] sqlite db at ${DB_PATH}`);
   });
 }
 

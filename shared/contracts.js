@@ -1,5 +1,5 @@
 /**
- * Shared request/response contracts for the Phase 4 pipeline.
+ * Shared request/response contracts for the Phase 5 pipeline.
  *
  * /api/stt
  * request: { audioBase64: string, mimeType: string }
@@ -100,9 +100,26 @@
  *     reasoning?: object
  *   } | null
  * }
+ *
+ * /api/validation
+ * response: {
+ *   ok: boolean,
+ *   checkedAt: string,
+ *   checks: { key: string, ok: boolean, required: boolean, message: string }[],
+ *   warnings: string[]
+ * }
+ *
+ * /api/progress
+ * request: Authorization: Bearer <token>
+ * response: {
+ *   streak: { currentDays: number, lastActiveDay: string | null },
+ *   trends: { metricKey: string, points: { day: string, value: number }[] }[],
+ *   recurringIssues: { type: 'grammar'|'pronunciation', text: string, count: number }[],
+ *   totals: { snapshotCount: number, activityDays: number }
+ * }
  */
 
-const API_CONTRACT_VERSION = "phase4-v1";
+const API_CONTRACT_VERSION = "phase5-v1";
 
 module.exports = {
   API_CONTRACT_VERSION

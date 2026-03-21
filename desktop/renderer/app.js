@@ -21,6 +21,13 @@ const assessmentSummaryEl = document.getElementById("assessmentSummary");
 const assessmentSpeakingEl = document.getElementById("assessmentSpeaking");
 const assessmentGrammarEl = document.getElementById("assessmentGrammar");
 const assessmentVocabularyEl = document.getElementById("assessmentVocabulary");
+const systemStatusEl = document.getElementById("systemStatus");
+const systemChecksEl = document.getElementById("systemChecks");
+const progressStatusEl = document.getElementById("progressStatus");
+const streakCurrentEl = document.getElementById("streakCurrent");
+const lastActiveDayEl = document.getElementById("lastActiveDay");
+const progressTrendsEl = document.getElementById("progressTrends");
+const recurringIssuesEl = document.getElementById("recurringIssues");
 
 const captureMsEl = document.getElementById("captureMs");
 const sttMsEl = document.getElementById("sttMs");
@@ -82,6 +89,14 @@ function setStatus(text) {
 
 function setAssessmentStatus(text) {
   assessmentStatusEl.textContent = text;
+}
+
+function setSystemStatus(text) {
+  systemStatusEl.textContent = text;
+}
+
+function setProgressStatus(text) {
+  progressStatusEl.textContent = text;
 }
 
 function appendMessage(role, text, meta = "") {
@@ -166,6 +181,102 @@ function updateAssessmentResultCard(result) {
   assessmentSpeakingEl.textContent = String(result.speakingScore);
   assessmentGrammarEl.textContent = String(result.grammarScore);
   assessmentVocabularyEl.textContent = String(result.vocabularyScore);
+}
+
+function metricKeyToLabel(metricKey) {
+  const labels = {
+    "assessment.overall": "Overall",
+    "assessment.speaking": "Speaking",
+    "assessment.grammar": "Grammar",
+    "assessment.vocabulary": "Vocabulary"
+  };
+  return labels[metricKey] || metricKey;
+}
+
+function renderSystemValidation(validation) {
+  systemChecksEl.innerHTML = "";
+  if (!validation?.checks?.length) {
+    const item = document.createElement("li");
+    item.textContent = "No validation checks available.";
+    systemChecksEl.appendChild(item);
+    return;
+  }
+
+  for (const check of validation.checks) {
+    const item = document.createElement("li");
+    item.textContent = `${check.ok ? "OK" : "Warn"}: ${check.message}`;
+    item.className = check.ok ? "checkOk" : "checkWarn";
+    systemChecksEl.appendChild(item);
+  }
+}
+
+function renderProgressSummary(progress) {
+  const streakDays = Number(progress?.streak?.currentDays || 0);
+  streakCurrentEl.textContent = `${streakDays} day${streakDays === 1 ? "" : "s"}`;
+  lastActiveDayEl.textContent = progress?.streak?.lastActiveDay || "-";
+
+  progressTrendsEl.innerHTML = "";
+  const trends = Array.isArray(progress?.trends) ? progress.trends : [];
+  if (!trends.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "No trend data yet. Complete an assessment to start tracking.";
+    progressTrendsEl.appendChild(empty);
+  } else {
+    for (const trend of trends) {
+      const item = document.createElement("li");
+      const points = Array.isArray(trend.points) ? trend.points : [];
+      const latestPoint = points[points.length - 1];
+      item.textContent = `${metricKeyToLabel(trend.metricKey)}: ${latestPoint ? latestPoint.value : "-"}`;
+      progressTrendsEl.appendChild(item);
+    }
+  }
+
+  recurringIssuesEl.innerHTML = "";
+  const issues = Array.isArray(progress?.recurringIssues) ? progress.recurringIssues : [];
+  if (!issues.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "No recurring issues detected yet.";
+    recurringIssuesEl.appendChild(empty);
+    return;
+  }
+
+  for (const issue of issues) {
+    const item = document.createElement("li");
+    item.textContent = `${issue.type}: ${issue.text} (${issue.count}x)`;
+    recurringIssuesEl.appendChild(item);
+  }
+}
+
+async function hydrateSystemValidation() {
+  try {
+    const validation = await window.bayan.getSystemValidation();
+    renderSystemValidation(validation);
+    if (validation.ok) {
+      setSystemStatus("System validation passed.");
+    } else {
+      setSystemStatus(`Validation warnings: ${validation.warnings.length}`);
+    }
+  } catch (error) {
+    setSystemStatus(`Validation unavailable: ${error.message}`);
+    renderSystemValidation(null);
+  }
+}
+
+async function hydrateProgressSummary() {
+  if (!activeToken) {
+    setProgressStatus("Sign in to load progress dashboard.");
+    renderProgressSummary(null);
+    return;
+  }
+
+  try {
+    const progress = await window.bayan.getProgressSummary({ token: activeToken });
+    renderProgressSummary(progress);
+    setProgressStatus("Progress summary updated.");
+  } catch (error) {
+    setProgressStatus(`Unable to load progress: ${error.message}`);
+    renderProgressSummary(null);
+  }
 }
 
 async function hydrateLatestAssessment() {
@@ -316,6 +427,7 @@ async function stopRecording() {
         updateAssessmentPrompt("No active assessment.");
         setAssessmentStatus("Assessment completed. Results saved.");
         updateAssessmentResultCard(result.assessment.result || null);
+        await hydrateProgressSummary();
       } else {
         updateAssessmentPrompt(result.assessment.currentPrompt || "No active assessment.");
         setAssessmentStatus(
@@ -468,6 +580,7 @@ async function handleAuth(action) {
     setAssessmentStatus("Ready to start assessment.");
     await refreshSessionList();
     await hydrateLatestAssessment();
+    await hydrateProgressSummary();
     setStatus(`Authenticated as ${result.user.email}`);
   } catch (error) {
     setAuthStatus(`Auth error: ${error.message}`);
@@ -489,6 +602,8 @@ async function handleLogout() {
   updateAssessmentPrompt("No active assessment.");
   setAssessmentStatus("Sign in to start assessment.");
   updateAssessmentResultCard(null);
+  setProgressStatus("Sign in to load progress dashboard.");
+  renderProgressSummary(null);
   renderSessionList([]);
   clearMessages();
   setStatus("Logged out");
@@ -570,6 +685,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   await hydrateAuthState();
   await refreshSessionList();
   await hydrateLatestAssessment();
+  await hydrateSystemValidation();
+  await hydrateProgressSummary();
 
   if (activeToken) {
     setAssessmentStatus("Ready to start assessment.");

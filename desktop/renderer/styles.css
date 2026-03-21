@@ -29,21 +29,25 @@ body {
   grid-template-columns: 1fr 280px;
   grid-template-areas:
     "header header"
+    "system metrics"
     "assessment metrics"
     "auth metrics"
     "controls metrics"
     "chat metrics"
     "history metrics"
+    "progress metrics"
     "feedback metrics";
   gap: 16px;
 }
 
 .header,
+.system,
 .assessment,
 .auth,
 .controls,
 .chat,
 .history,
+.progress,
 .metrics,
 .feedback {
   border: 1px solid var(--border);
@@ -65,6 +69,32 @@ body {
 .header p {
   margin: 8px 0 0;
   color: var(--muted);
+}
+
+.system {
+  grid-area: system;
+  padding: 20px;
+}
+
+.system h2 {
+  margin: 0;
+}
+
+.systemChecks {
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+
+.systemChecks li {
+  margin-bottom: 8px;
+}
+
+.checkOk {
+  color: #0f5132;
+}
+
+.checkWarn {
+  color: #7a4e00;
 }
 
 .assessment {
@@ -230,6 +260,38 @@ body {
   padding: 20px;
 }
 
+.progress {
+  grid-area: progress;
+  padding: 20px;
+  display: grid;
+  gap: 12px;
+}
+
+.progress h2 {
+  margin: 0;
+}
+
+.progressCard {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: #fbfdff;
+}
+
+.progressCard h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.progressCard ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.progressCard li {
+  margin-bottom: 6px;
+}
+
 .history h2 {
   margin-top: 0;
 }
@@ -347,12 +409,14 @@ body {
     grid-template-columns: 1fr;
     grid-template-areas:
       "header"
+      "system"
       "assessment"
       "auth"
       "controls"
       "metrics"
       "chat"
       "history"
+      "progress"
       "feedback";
   }
 

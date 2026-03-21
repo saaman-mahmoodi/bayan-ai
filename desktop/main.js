@@ -115,6 +115,19 @@ ipcMain.handle("assessment:latest", async (_event, payload) => {
   });
 });
 
+ipcMain.handle("system:validation", async () => {
+  return backendRequest("/api/validation", {
+    method: "GET"
+  });
+});
+
+ipcMain.handle("progress:summary", async (_event, payload) => {
+  return backendRequest("/api/progress", {
+    method: "GET",
+    token: payload?.token
+  });
+});
+
 ipcMain.handle("assessment:process-audio", async (_event, payload) => {
   const totalStart = performance.now();
 

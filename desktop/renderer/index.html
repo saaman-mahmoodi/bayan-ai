@@ -3,15 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bayan - Phase 4 Prototype</title>
+    <title>Bayan - Phase 5 Prototype</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="app">
       <header class="header">
         <h1>Bayan</h1>
-        <p>Phase 4: Assessment + CEFR + Voice Tutor Flow</p>
+        <p>Phase 5: Progress Tracking + Reliability Hardening</p>
       </header>
+
+      <section class="system">
+        <h2>System Validation</h2>
+        <p id="systemStatus" class="status">Checking system readiness...</p>
+        <ul id="systemChecks" class="systemChecks">
+          <li>No validation checks available.</li>
+        </ul>
+      </section>
 
       <section class="assessment">
         <h2>Baseline Assessment</h2>
@@ -90,6 +98,33 @@
         <ul id="sessionList" class="sessionList">
           <li>Sign in to view saved sessions.</li>
         </ul>
+      </section>
+
+      <section class="progress">
+        <h2>Progress Dashboard</h2>
+        <p id="progressStatus" class="status">Sign in to load progress dashboard.</p>
+
+        <article class="progressCard">
+          <h3>Streak</h3>
+          <ul>
+            <li>Current streak: <span id="streakCurrent">0 days</span></li>
+            <li>Last active day: <span id="lastActiveDay">-</span></li>
+          </ul>
+        </article>
+
+        <article class="progressCard">
+          <h3>Recent Trends</h3>
+          <ul id="progressTrends">
+            <li>No trend data yet. Complete an assessment to start tracking.</li>
+          </ul>
+        </article>
+
+        <article class="progressCard">
+          <h3>Recurring Issues</h3>
+          <ul id="recurringIssues">
+            <li>No recurring issues detected yet.</li>
+          </ul>
+        </article>
       </section>
 
       <section class="feedback">

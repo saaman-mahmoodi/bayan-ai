@@ -2,7 +2,7 @@
   "name": "bayan",
   "private": true,
   "version": "0.1.0",
-  "description": "Bayan desktop prototype - Phase 3 auth and persistence",
+  "description": "Bayan desktop prototype - Phase 5 progress tracking and hardening",
   "main": "desktop/main.js",
   "scripts": {
     "dev:backend": "node backend/src/server.js",
