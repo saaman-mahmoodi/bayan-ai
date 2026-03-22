@@ -4,8 +4,8 @@
   --surface: #ffffff;
   --text: #17212b;
   --muted: #506072;
-  --accent: #6b8e6f;
-  --accent-strong: #556b5d;
+  --accent: #0b7285;
+  --accent-strong: #095c6a;
   --border: #d8e0e8;
 }
 
@@ -17,7 +17,7 @@ body {
   margin: 0;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   color: var(--text);
-  background: radial-gradient(circle at top right, #e8e3db 0%, var(--bg) 38%);
+  background: radial-gradient(circle at top right, #d9eef2 0%, var(--bg) 38%);
 }
 
 .app {
@@ -111,8 +111,8 @@ body {
 .assessmentButton {
   border: 0;
   border-radius: 8px;
-  background: #e8ede8;
-  color: #5a6b60;
+  background: #e3f4f7;
+  color: #0a6170;
   padding: 10px 12px;
   font-weight: 600;
   cursor: pointer;
@@ -123,7 +123,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px;
-  background: #faf8f5;
+  background: #fbfdff;
 }
 
 .assessmentPromptCard h3,
@@ -186,8 +186,8 @@ body {
 .authActions button {
   border: 0;
   border-radius: 8px;
-  background: #e8ede8;
-  color: #5a6b60;
+  background: #e3f4f7;
+  color: #0a6170;
   padding: 10px 12px;
   font-weight: 600;
   cursor: pointer;
@@ -243,8 +243,8 @@ body {
 .savePrefs {
   border: 0;
   border-radius: 8px;
-  background: #e8ede8;
-  color: #5a6b60;
+  background: #e3f4f7;
+  color: #0a6170;
   padding: 10px 12px;
   font-weight: 600;
   cursor: pointer;
@@ -275,7 +275,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px;
-  background: #faf8f5;
+  background: #fbfdff;
 }
 
 .progressCard h3 {
@@ -308,11 +308,11 @@ body {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #faf8f5;
+  background: #fbfdff;
   color: var(--text);
   padding: 10px 12px;
   text-align: left;
-  cursor: button;
+  cursor: pointer;
 }
 
 .messages {
@@ -343,7 +343,7 @@ body {
 }
 
 .message.You {
-  border-left: 4px solid #8b7355;
+  border-left: 4px solid #4c6ef5;
 }
 
 .message.Bayan {
@@ -383,7 +383,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px;
-  background: #faf8f5;
+  background: #fbfdff;
 }
 
 .feedbackCard h3 {
