@@ -1,14 +1,35 @@
 {
   "name": "bayan",
-  "private": true,
   "version": "0.1.0",
-  "description": "Bayan desktop prototype - Phase 5 progress tracking and hardening",
+  "description": "Privacy-first, offline-capable voice language tutoring powered by local AI models",
   "main": "desktop/main.js",
   "scripts": {
     "dev:backend": "node backend/src/server.js",
     "dev:desktop": "electron desktop/main.js",
     "start": "electron desktop/main.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/bayan.git"
+  },
+  "keywords": [
+    "language-learning",
+    "voice-tutor",
+    "ai",
+    "offline",
+    "privacy",
+    "electron",
+    "whisper",
+    "ollama",
+    "speech-recognition",
+    "language-education"
+  ],
+  "author": "Bayan Contributors",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/yourusername/bayan/issues"
+  },
+  "homepage": "https://github.com/yourusername/bayan#readme",
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "sqlite3": "^5.1.7"
