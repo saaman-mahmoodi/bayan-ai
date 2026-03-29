@@ -1,0 +1,426 @@
+:root {
+  color-scheme: light;
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --text: #17212b;
+  --muted: #506072;
+  --accent: #0b7285;
+  --accent-strong: #095c6a;
+  --border: #d8e0e8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  color: var(--text);
+  background: radial-gradient(circle at top right, #d9eef2 0%, var(--bg) 38%);
+}
+
+.app {
+  margin: 0 auto;
+  max-width: 920px;
+  min-height: 100vh;
+  padding: 32px 20px 40px;
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  grid-template-areas:
+    "header header"
+    "system metrics"
+    "assessment metrics"
+    "auth metrics"
+    "controls metrics"
+    "chat metrics"
+    "history metrics"
+    "progress metrics"
+    "feedback metrics";
+  gap: 16px;
+}
+
+.header,
+.system,
+.assessment,
+.auth,
+.controls,
+.chat,
+.history,
+.progress,
+.metrics,
+.feedback {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 6px 20px rgba(8, 27, 45, 0.05);
+}
+
+.header {
+  grid-area: header;
+  padding: 20px;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 32px;
+}
+
+.header p {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.system {
+  grid-area: system;
+  padding: 20px;
+}
+
+.system h2 {
+  margin: 0;
+}
+
+.systemChecks {
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+
+.systemChecks li {
+  margin-bottom: 8px;
+}
+
+.checkOk {
+  color: #0f5132;
+}
+
+.checkWarn {
+  color: #7a4e00;
+}
+
+.assessment {
+  grid-area: assessment;
+  padding: 20px;
+  display: grid;
+  gap: 10px;
+}
+
+.assessment h2 {
+  margin: 0;
+}
+
+.assessmentButton {
+  border: 0;
+  border-radius: 8px;
+  background: #e3f4f7;
+  color: #0a6170;
+  padding: 10px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.assessmentPromptCard,
+.assessmentResultCard {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: #fbfdff;
+}
+
+.assessmentPromptCard h3,
+.assessmentResultCard h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.assessmentPromptCard p,
+.assessmentResultCard p,
+.assessmentResultCard ul {
+  margin: 0;
+}
+
+.assessmentResultCard ul {
+  padding-left: 18px;
+  margin-top: 8px;
+}
+
+.assessmentResultCard li {
+  margin-bottom: 6px;
+}
+
+.auth {
+  grid-area: auth;
+  padding: 20px;
+}
+
+.auth h2 {
+  margin: 0;
+}
+
+.authForm {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.authForm label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.authForm input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.authActions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.authActions button {
+  border: 0;
+  border-radius: 8px;
+  background: #e3f4f7;
+  color: #0a6170;
+  padding: 10px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.controls {
+  grid-area: controls;
+  padding: 20px;
+}
+
+.ptt {
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(120deg, var(--accent), var(--accent-strong));
+  color: white;
+  padding: 14px 24px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.status {
+  margin-top: 16px;
+  color: var(--muted);
+}
+
+.preferences {
+  margin-top: 20px;
+  display: grid;
+  gap: 10px;
+}
+
+.preferences h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.preferences label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.preferences input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.savePrefs {
+  border: 0;
+  border-radius: 8px;
+  background: #e3f4f7;
+  color: #0a6170;
+  padding: 10px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat {
+  grid-area: chat;
+  padding: 20px;
+}
+
+.history {
+  grid-area: history;
+  padding: 20px;
+}
+
+.progress {
+  grid-area: progress;
+  padding: 20px;
+  display: grid;
+  gap: 12px;
+}
+
+.progress h2 {
+  margin: 0;
+}
+
+.progressCard {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: #fbfdff;
+}
+
+.progressCard h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.progressCard ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.progressCard li {
+  margin-bottom: 6px;
+}
+
+.history h2 {
+  margin-top: 0;
+}
+
+.sessionList {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.sessionButton {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfdff;
+  color: var(--text);
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.message {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.message h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.message p {
+  margin: 0;
+}
+
+.message small {
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.message.You {
+  border-left: 4px solid #4c6ef5;
+}
+
+.message.Bayan {
+  border-left: 4px solid var(--accent);
+}
+
+.metrics {
+  grid-area: metrics;
+  padding: 20px;
+}
+
+.metrics h2 {
+  margin-top: 0;
+}
+
+.metrics ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.metrics li {
+  margin-bottom: 10px;
+}
+
+.feedback {
+  grid-area: feedback;
+  padding: 20px;
+  display: grid;
+  gap: 12px;
+}
+
+.feedback h2 {
+  margin: 0;
+}
+
+.feedbackCard {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: #fbfdff;
+}
+
+.feedbackCard h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.feedbackCard p,
+.feedbackCard ul {
+  margin: 0;
+}
+
+.feedbackCard ul {
+  padding-left: 18px;
+}
+
+.feedbackCard li {
+  margin-bottom: 6px;
+}
+
+@media (max-width: 900px) {
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "header"
+      "system"
+      "assessment"
+      "auth"
+      "controls"
+      "metrics"
+      "chat"
+      "history"
+      "progress"
+      "feedback";
+  }
+
+  .authActions {
+    grid-template-columns: 1fr;
+  }
+}
