@@ -3,47 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bayan - Phase 5 Prototype</title>
+    <title>Bayan</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="app">
-      <header class="header">
-        <h1>Bayan</h1>
-        <p>Phase 5: Progress Tracking + Reliability Hardening</p>
-      </header>
+    <div class="backgroundGlow backgroundGlowOne"></div>
+    <div class="backgroundGlow backgroundGlowTwo"></div>
 
-      <section class="system">
-        <h2>System Validation</h2>
-        <p id="systemStatus" class="status">Checking system readiness...</p>
-        <ul id="systemChecks" class="systemChecks">
-          <li>No validation checks available.</li>
-        </ul>
-      </section>
+    <section id="loginView" class="loginView">
+      <div class="loginCard">
+        <div class="brandBlock">
+          <div class="brandMark">B</div>
+          <h1>Bayan</h1>
+          <p>Voice-powered language learning</p>
+        </div>
 
-      <section class="assessment">
-        <h2>Baseline Assessment</h2>
-        <p id="assessmentStatus" class="status">Sign in to start assessment.</p>
-        <button id="startAssessmentButton" type="button" class="assessmentButton">Start Assessment</button>
-        <article class="assessmentPromptCard">
-          <h3>Current Prompt</h3>
-          <p id="assessmentPrompt">No active assessment.</p>
-        </article>
-        <article class="assessmentResultCard">
-          <h3>Latest Result</h3>
-          <p id="assessmentSummary">No assessment completed yet.</p>
-          <ul>
-            <li>Speaking: <span id="assessmentSpeaking">-</span></li>
-            <li>Grammar: <span id="assessmentGrammar">-</span></li>
-            <li>Vocabulary: <span id="assessmentVocabulary">-</span></li>
-          </ul>
-        </article>
-      </section>
+        <p id="authStatus" class="status authStatus">Signed out</p>
 
-      <section class="auth">
-        <h2>Account</h2>
-        <p id="authStatus" class="status">Signed out</p>
-        <form id="authForm" class="authForm">
+        <form id="authForm" class="authForm authFormLogin">
           <label>
             Email
             <input id="authEmail" type="email" autocomplete="email" required />
@@ -52,93 +29,266 @@
             Password
             <input id="authPassword" type="password" autocomplete="current-password" required />
           </label>
-          <div class="authActions">
-            <button id="loginButton" type="button">Login</button>
-            <button id="registerButton" type="button">Register</button>
-            <button id="logoutButton" type="button">Logout</button>
+
+          <button id="loginButton" type="button" class="primaryButton">Login</button>
+          <button id="registerButton" type="button" class="linkButton createAccountButton">Create account</button>
+        </form>
+      </div>
+    </section>
+
+    <main id="appShell" class="appShell hidden">
+      <button id="sidebarToggle" class="sidebarToggle" type="button" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+      <aside class="sidebar shellCard">
+        <div class="sidebarTop">
+          <div class="sidebarBrand">B</div>
+          <nav class="sidebarNav" aria-label="Primary">
+            <button type="button" class="navButton active" data-panel="practice" title="Practice" aria-label="Practice">
+              <span class="navIcon">⌁</span>
+              <span class="navLabel">Practice</span>
+            </button>
+            <button type="button" class="navButton" data-panel="progress" title="Progress" aria-label="Progress">
+              <span class="navIcon">◔</span>
+              <span class="navLabel">Progress</span>
+            </button>
+            <button type="button" class="navButton" data-panel="settings" title="Settings" aria-label="Settings">
+              <span class="navIcon">⚙</span>
+              <span class="navLabel">Settings</span>
+            </button>
+          </nav>
+        </div>
+
+        <div class="sidebarProfile">
+          <div id="userAvatar" class="userAvatar">B</div>
+          <div class="sidebarProfileText">
+            <strong>Bayan User</strong>
+            <span id="userEmail">Signed out</span>
           </div>
-        </form>
-      </section>
+        </div>
+      </aside>
 
-      <section class="controls">
-        <button id="pttButton" class="ptt">Hold to Speak</button>
-        <p id="status" class="status">Idle</p>
+      <section class="contentShell">
+        <header class="topBar shellCard">
+          <div class="topBarTitleGroup">
+            <p class="eyebrow">Voice-first tutor</p>
+            <h2 id="pageTitle">Practice</h2>
+          </div>
 
-        <form id="preferencesForm" class="preferences">
-          <h2>Language Preferences</h2>
-          <label>
-            Target language
-            <input id="targetLanguage" type="text" value="English" />
-          </label>
-          <label>
-            Native language
-            <input id="nativeLanguage" type="text" value="Arabic" />
-          </label>
-          <button type="submit" class="savePrefs">Save preferences</button>
-        </form>
-      </section>
+          <div class="topBarActions">
+            <div class="languageSummary">
+              <span id="languageSummary">English → Arabic</span>
+            </div>
+            <button id="topSettingsButton" type="button" class="iconButton" aria-label="Open settings">⚙</button>
+          </div>
+        </header>
 
-      <section class="metrics">
-        <h2>Latency</h2>
-        <ul>
-          <li>Capture: <span id="captureMs">0</span> ms</li>
-          <li>STT: <span id="sttMs">0</span> ms</li>
-          <li>LLM: <span id="llmMs">0</span> ms</li>
-          <li>Total: <span id="totalMs">0</span> ms</li>
-        </ul>
-      </section>
+        <section class="panel panelPractice active" data-panel="practice">
+          <div class="practiceGrid">
+            <section class="hero shellCard">
+              <div class="heroHeader">
+                <div class="heroText">
+                  <p class="eyebrow">Practice</p>
+                  <h3>Speak naturally. Let Bayan guide the next sentence.</h3>
+                  <p id="status" class="status heroStatus">Idle</p>
+                </div>
 
-      <section class="chat">
-        <h2>Conversation</h2>
-        <div id="messages" class="messages"></div>
-      </section>
+                <div class="assessmentInline">
+                  <div>
+                    <p class="eyebrow">Assessment</p>
+                    <p id="assessmentStatus" class="status">Sign in to start assessment.</p>
+                    <p id="assessmentPrompt" class="assessmentPrompt">No active assessment.</p>
+                  </div>
+                  <button id="startAssessmentButton" type="button" class="secondaryButton">Start Assessment</button>
+                </div>
+              </div>
 
-      <section class="history">
-        <h2>Session History</h2>
-        <ul id="sessionList" class="sessionList">
-          <li>Sign in to view saved sessions.</li>
-        </ul>
-      </section>
+              <div class="practiceFocusArea">
+                <section class="transcriptPanel shellCard compactTranscriptPanel">
+                  <div class="sectionHeader">
+                    <div>
+                      <p class="eyebrow">Transcript</p>
+                      <h3>Live conversation</h3>
+                    </div>
+                  </div>
+                  <div id="messages" class="messages"></div>
+                </section>
 
-      <section class="progress">
-        <h2>Progress Dashboard</h2>
-        <p id="progressStatus" class="status">Sign in to load progress dashboard.</p>
+                <div class="voiceStage" id="voiceStage" data-voice-state="idle">
+                  <div class="voiceStageInner">
+                    <div class="voiceAura voiceAuraOuter"></div>
+                    <div class="voiceAura voiceAuraMiddle"></div>
+                    <button id="pttButton" class="ptt" type="button" aria-label="Hold to speak">
+                      <span class="pttIcon">🎙</span>
+                      <span class="pttLabel">Hold to speak</span>
+                    </button>
+                    <div id="waveform" class="waveform" aria-hidden="true">
+                      <span class="waveBar"></span>
+                      <span class="waveBar"></span>
+                      <span class="waveBar"></span>
+                      <span class="waveBar"></span>
+                      <span class="waveBar"></span>
+                    </div>
+                  </div>
+                </div>
 
-        <article class="progressCard">
-          <h3>Streak</h3>
-          <ul>
-            <li>Current streak: <span id="streakCurrent">0 days</span></li>
-            <li>Last active day: <span id="lastActiveDay">-</span></li>
-          </ul>
-        </article>
+                <section class="feedbackPanel shellCard feedbackPanelContextual">
+                  <div class="sectionHeader">
+                    <div>
+                      <p class="eyebrow">Feedback</p>
+                      <h3>Contextual coaching</h3>
+                    </div>
+                  </div>
 
-        <article class="progressCard">
-          <h3>Recent Trends</h3>
-          <ul id="progressTrends">
-            <li>No trend data yet. Complete an assessment to start tracking.</li>
-          </ul>
-        </article>
+                  <article class="feedbackCard">
+                    <h4>Correction</h4>
+                    <p id="grammarCorrection">No feedback yet.</p>
+                  </article>
 
-        <article class="progressCard">
-          <h3>Recurring Issues</h3>
-          <ul id="recurringIssues">
-            <li>No recurring issues detected yet.</li>
-          </ul>
-        </article>
-      </section>
+                  <article class="feedbackCard">
+                    <h4>Pronunciation</h4>
+                    <ul id="pronunciationSuggestions">
+                      <li>No suggestions yet.</li>
+                    </ul>
+                  </article>
+                </section>
+              </div>
+            </section>
+          </div>
+        </section>
 
-      <section class="feedback">
-        <h2>Tutor Feedback</h2>
-        <article class="feedbackCard">
-          <h3>Grammar correction</h3>
-          <p id="grammarCorrection">No feedback yet.</p>
-        </article>
-        <article class="feedbackCard">
-          <h3>Pronunciation suggestions</h3>
-          <ul id="pronunciationSuggestions">
-            <li>No suggestions yet.</li>
-          </ul>
-        </article>
+        <section class="panel panelProgress" data-panel="progress">
+          <div class="dashboardGrid">
+            <section class="shellCard panelCard progressOverview">
+              <div class="sectionHeader">
+                <div>
+                  <p class="eyebrow">Progress</p>
+                  <h3>Learning snapshot</h3>
+                </div>
+                <p id="progressStatus" class="status compactStatus">Sign in to load progress dashboard.</p>
+              </div>
+
+              <div class="statTiles">
+                <article class="statTile">
+                  <span>Current streak</span>
+                  <strong id="streakCurrent">0 days</strong>
+                </article>
+                <article class="statTile">
+                  <span>Last active</span>
+                  <strong id="lastActiveDay">-</strong>
+                </article>
+                <article class="statTile">
+                  <span>Latest assessment</span>
+                  <strong id="assessmentSummary">No assessment completed yet.</strong>
+                </article>
+              </div>
+
+              <div class="assessmentScores">
+                <article class="statTile smallTile"><span>Speaking</span><strong id="assessmentSpeaking">-</strong></article>
+                <article class="statTile smallTile"><span>Grammar</span><strong id="assessmentGrammar">-</strong></article>
+                <article class="statTile smallTile"><span>Vocabulary</span><strong id="assessmentVocabulary">-</strong></article>
+              </div>
+            </section>
+
+            <section class="shellCard panelCard">
+              <div class="sectionHeader">
+                <div>
+                  <p class="eyebrow">Trends</p>
+                  <h3>Recent movement</h3>
+                </div>
+              </div>
+              <ul id="progressTrends" class="listBlock">
+                <li>No trend data yet. Complete an assessment to start tracking.</li>
+              </ul>
+            </section>
+
+            <section class="shellCard panelCard">
+              <div class="sectionHeader">
+                <div>
+                  <p class="eyebrow">Recurring issues</p>
+                  <h3>Patterns to improve</h3>
+                </div>
+              </div>
+              <ul id="recurringIssues" class="listBlock">
+                <li>No recurring issues detected yet.</li>
+              </ul>
+            </section>
+
+            <section class="shellCard panelCard">
+              <div class="sectionHeader">
+                <div>
+                  <p class="eyebrow">Saved sessions</p>
+                  <h3>Resume practice</h3>
+                </div>
+              </div>
+              <ul id="sessionList" class="sessionList">
+                <li>Sign in to view saved sessions.</li>
+              </ul>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel panelSettings" data-panel="settings">
+          <div class="dashboardGrid settingsGrid">
+            <section class="shellCard panelCard settingsCard">
+              <div class="sectionHeader">
+                <div>
+                  <p class="eyebrow">Languages</p>
+                  <h3>Practice preferences</h3>
+                </div>
+              </div>
+
+              <form id="preferencesForm" class="preferences">
+                <label>
+                  Target language
+                  <input id="targetLanguage" type="text" value="English" />
+                </label>
+                <label>
+                  Native language
+                  <input id="nativeLanguage" type="text" value="Arabic" />
+                </label>
+                <button type="submit" class="primaryButton subtleButton">Save preferences</button>
+              </form>
+            </section>
+
+            <section class="shellCard panelCard">
+              <div class="sectionHeader">
+                <div>
+                  <p class="eyebrow">Performance</p>
+                  <h3>Latency</h3>
+                </div>
+              </div>
+              <ul class="listBlock metricsList">
+                <li>Capture <span id="captureMs">0 ms</span></li>
+                <li>STT <span id="sttMs">0 ms</span></li>
+                <li>LLM <span id="llmMs">0 ms</span></li>
+                <li>Total <span id="totalMs">0 ms</span></li>
+              </ul>
+            </section>
+
+            <section class="shellCard panelCard">
+              <div class="sectionHeader">
+                <div>
+                  <p class="eyebrow">System</p>
+                  <h3>Readiness</h3>
+                </div>
+              </div>
+              <p id="systemStatus" class="status compactStatus">Checking system readiness...</p>
+              <ul id="systemChecks" class="listBlock systemChecks">
+                <li>No validation checks available.</li>
+              </ul>
+            </section>
+
+            <section class="shellCard panelCard accountCard">
+              <div class="sectionHeader">
+                <div>
+                  <p class="eyebrow">Account</p>
+                  <h3>Session control</h3>
+                </div>
+              </div>
+              <p class="status compactStatus">Use the entry screen to sign in or create an account.</p>
+              <button id="logoutButton" type="button" class="secondaryButton">Logout</button>
+            </section>
+          </div>
+        </section>
       </section>
     </main>
 

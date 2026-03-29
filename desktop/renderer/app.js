@@ -1,6 +1,16 @@
 const pttButton = document.getElementById("pttButton");
 const statusEl = document.getElementById("status");
 const messagesEl = document.getElementById("messages");
+const loginViewEl = document.getElementById("loginView");
+const appShellEl = document.getElementById("appShell");
+const voiceStageEl = document.getElementById("voiceStage");
+const waveformEl = document.getElementById("waveform");
+const pageTitleEl = document.getElementById("pageTitle");
+const languageSummaryEl = document.getElementById("languageSummary");
+const userEmailEl = document.getElementById("userEmail");
+const userAvatarEl = document.getElementById("userAvatar");
+const sidebarToggleEl = document.getElementById("sidebarToggle");
+const topSettingsButton = document.getElementById("topSettingsButton");
 const authStatusEl = document.getElementById("authStatus");
 const authForm = document.getElementById("authForm");
 const authEmailEl = document.getElementById("authEmail");
@@ -33,6 +43,9 @@ const captureMsEl = document.getElementById("captureMs");
 const sttMsEl = document.getElementById("sttMs");
 const llmMsEl = document.getElementById("llmMs");
 const totalMsEl = document.getElementById("totalMs");
+const navButtons = Array.from(document.querySelectorAll(".navButton"));
+const panels = Array.from(document.querySelectorAll(".panel"));
+const waveBars = Array.from(document.querySelectorAll(".waveBar"));
 
 let mediaRecorder = null;
 let mediaStream = null;
@@ -41,9 +54,133 @@ let chunks = [];
 let activeToken = "";
 let currentSessionId = null;
 let activeAssessmentSessionId = null;
+let audioContext = null;
+let analyserNode = null;
+let sourceNode = null;
+let waveformFrame = 0;
+let activePanel = "practice";
+let sidebarPinned = window.innerWidth >= 1280;
+let sidebarOpen = false;
 
 const PREFERENCES_STORAGE_KEY = "bayan.preferences.v1";
 const AUTH_STORAGE_KEY = "bayan.auth.v1";
+const PANEL_TITLES = {
+  practice: "Practice",
+  progress: "Progress",
+  settings: "Settings"
+};
+
+function syncSidebarState() {
+  const isMobile = window.innerWidth <= 820;
+  const shouldExpand = !isMobile && sidebarPinned;
+  const shouldOpen = isMobile && sidebarOpen;
+
+  appShellEl.classList.toggle("sidebar-expanded", shouldExpand);
+  appShellEl.classList.toggle("sidebar-open", shouldOpen);
+  document.body.classList.toggle("sidebar-open", shouldOpen);
+
+  if (sidebarToggleEl) {
+    sidebarToggleEl.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+    sidebarToggleEl.textContent = shouldOpen ? "✕" : "☰";
+  }
+}
+
+function closeSidebarMenu() {
+  sidebarOpen = false;
+  syncSidebarState();
+}
+
+function handleResponsiveLayout() {
+  const width = window.innerWidth;
+  if (width <= 820) {
+    sidebarOpen = false;
+  } else if (width < 1280) {
+    sidebarPinned = false;
+    sidebarOpen = false;
+  }
+
+  if (width >= 1280 && !sidebarOpen) {
+    sidebarPinned = true;
+  }
+
+  syncSidebarState();
+}
+
+function setVoiceState(state) {
+  voiceStageEl.dataset.voiceState = state;
+}
+
+function stopWaveformAnimation() {
+  if (waveformFrame) {
+    cancelAnimationFrame(waveformFrame);
+    waveformFrame = 0;
+  }
+
+  for (const [index, bar] of waveBars.entries()) {
+    bar.style.transform = `scaleY(${0.55 + index * 0.04})`;
+  }
+}
+
+function startWaveformAnimation() {
+  stopWaveformAnimation();
+
+  const tick = () => {
+    let intensity = 0.22;
+
+    if (analyserNode) {
+      const data = new Uint8Array(analyserNode.frequencyBinCount);
+      analyserNode.getByteFrequencyData(data);
+      const sum = data.reduce((total, value) => total + value, 0);
+      intensity = Math.min(1, sum / Math.max(1, data.length * 128));
+    } else if (voiceStageEl.dataset.voiceState !== "idle") {
+      intensity = 0.38 + Math.abs(Math.sin(performance.now() / 220)) * 0.25;
+    }
+
+    waveBars.forEach((bar, index) => {
+      const phase = performance.now() / 220 + index * 0.6;
+      const scale = 0.65 + intensity * 2.1 + Math.abs(Math.sin(phase)) * 0.65;
+      bar.style.transform = `scaleY(${scale.toFixed(2)})`;
+    });
+
+    if (voiceStageEl.dataset.voiceState === "listening" || voiceStageEl.dataset.voiceState === "processing") {
+      waveformFrame = requestAnimationFrame(tick);
+    } else {
+      waveformFrame = 0;
+    }
+  };
+
+  waveformFrame = requestAnimationFrame(tick);
+}
+
+function updateShellVisibility() {
+  const authenticated = Boolean(activeToken);
+  loginViewEl.classList.toggle("hidden", authenticated);
+  appShellEl.classList.toggle("hidden", !authenticated);
+}
+
+function setActivePanel(panelName) {
+  activePanel = panelName;
+  pageTitleEl.textContent = PANEL_TITLES[panelName] || "Practice";
+  closeSidebarMenu();
+
+  for (const button of navButtons) {
+    button.classList.toggle("active", button.dataset.panel === panelName);
+  }
+
+  for (const panel of panels) {
+    panel.classList.toggle("active", panel.dataset.panel === panelName);
+  }
+}
+
+function syncProfileUI(user = null) {
+  const email = user?.email || "Signed out";
+  userEmailEl.textContent = email;
+  userAvatarEl.textContent = user?.email ? user.email[0].toUpperCase() : "B";
+}
+
+function syncLanguageSummary(preferences) {
+  languageSummaryEl.textContent = `${preferences.targetLanguage} → ${preferences.nativeLanguage}`;
+}
 
 function setAuthStatus(text) {
   authStatusEl.textContent = text;
@@ -51,10 +188,13 @@ function setAuthStatus(text) {
 
 function setAuthState({ token = "", user = null } = {}) {
   activeToken = token;
+  updateShellVisibility();
+  syncProfileUI(user);
 
   if (!token || !user) {
     localStorage.removeItem(AUTH_STORAGE_KEY);
     setAuthStatus("Signed out");
+    setActivePanel("practice");
     return;
   }
 
@@ -158,6 +298,7 @@ function getPreferencesFromForm() {
 function applyPreferencesToForm(preferences) {
   targetLanguageEl.value = preferences.targetLanguage;
   nativeLanguageEl.value = preferences.nativeLanguage;
+  syncLanguageSummary(preferences);
 }
 
 function clearMessages() {
@@ -316,13 +457,48 @@ function updateFeedback(feedback) {
   }
 }
 
+async function prepareAudioAnalyser(stream) {
+  if (!window.AudioContext && !window.webkitAudioContext) {
+    return;
+  }
+
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+
+  if (!audioContext) {
+    audioContext = new AudioContextCtor();
+  }
+
+  if (audioContext.state === "suspended") {
+    await audioContext.resume();
+  }
+
+  if (!analyserNode) {
+    analyserNode = audioContext.createAnalyser();
+    analyserNode.fftSize = 64;
+    analyserNode.smoothingTimeConstant = 0.75;
+  }
+
+  if (sourceNode) {
+    sourceNode.disconnect();
+  }
+
+  sourceNode = audioContext.createMediaStreamSource(stream);
+  sourceNode.connect(analyserNode);
+}
+
 async function playTts(tts) {
   if (!tts?.audioBase64 || !tts?.mimeType) {
     return;
   }
 
+  setVoiceState("responding");
   const audio = new Audio(`data:${tts.mimeType};base64,${tts.audioBase64}`);
   await audio.play();
+
+  await new Promise((resolve) => {
+    audio.addEventListener("ended", resolve, { once: true });
+    audio.addEventListener("error", resolve, { once: true });
+  });
 }
 
 async function blobToBase64(blob) {
@@ -342,6 +518,7 @@ async function blobToBase64(blob) {
 async function ensureStream() {
   if (!mediaStream) {
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    await prepareAudioAnalyser(mediaStream);
   }
 
   return mediaStream;
@@ -362,8 +539,12 @@ async function startRecording() {
     });
 
     mediaRecorder.start();
+    setVoiceState("listening");
+    startWaveformAnimation();
     setStatus("Recording...");
   } catch (error) {
+    setVoiceState("idle");
+    stopWaveformAnimation();
     setStatus(`Microphone error: ${error.message}`);
   }
 }
@@ -373,6 +554,8 @@ async function stopRecording() {
     return;
   }
 
+  setVoiceState("processing");
+  startWaveformAnimation();
   setStatus("Processing...");
 
   await new Promise((resolve) => {
@@ -384,6 +567,8 @@ async function stopRecording() {
   captureMsEl.textContent = String(captureMs);
 
   if (!chunks.length) {
+    setVoiceState("idle");
+    stopWaveformAnimation();
     setStatus("No audio captured");
     return;
   }
@@ -439,6 +624,8 @@ async function stopRecording() {
     try {
       await playTts(result.tts);
     } catch (error) {
+      setVoiceState("idle");
+      stopWaveformAnimation();
       setStatus(`Idle (TTS playback failed: ${error.message})`);
       return;
     }
@@ -446,8 +633,12 @@ async function stopRecording() {
     sttMsEl.textContent = String(result.timings.sttMs || 0);
     llmMsEl.textContent = String(result.timings.llmMs || 0);
     totalMsEl.textContent = String(result.timings.totalMs || 0);
+    setVoiceState("idle");
+    stopWaveformAnimation();
     setStatus("Idle");
   } catch (error) {
+    setVoiceState("idle");
+    stopWaveformAnimation();
     setStatus(`Pipeline error: ${error.message}`);
   }
 }
@@ -606,6 +797,8 @@ async function handleLogout() {
   renderProgressSummary(null);
   renderSessionList([]);
   clearMessages();
+  setVoiceState("idle");
+  stopWaveformAnimation();
   setStatus("Logged out");
 }
 
@@ -678,9 +871,53 @@ startAssessmentButton.addEventListener("click", () => {
   void startAssessment();
 });
 
+topSettingsButton.addEventListener("click", () => {
+  setActivePanel("settings");
+});
+
+if (sidebarToggleEl) {
+  sidebarToggleEl.addEventListener("click", () => {
+    if (window.innerWidth <= 820) {
+      sidebarOpen = !sidebarOpen;
+    } else {
+      sidebarPinned = !sidebarPinned;
+    }
+
+    syncSidebarState();
+  });
+}
+
+for (const button of navButtons) {
+  button.addEventListener("click", () => {
+    setActivePanel(button.dataset.panel || "practice");
+  });
+}
+
+window.addEventListener("resize", handleResponsiveLayout);
+
+document.addEventListener("click", (event) => {
+  if (window.innerWidth > 820 || !sidebarOpen) {
+    return;
+  }
+
+  const target = event.target;
+  if (!(target instanceof Node)) {
+    return;
+  }
+
+  if (appShellEl.contains(target) && !target.closest(".sidebar") && !target.closest(".sidebarToggle")) {
+    closeSidebarMenu();
+  }
+});
+
 window.addEventListener("DOMContentLoaded", async () => {
   const savedPreferences = loadPreferences();
   applyPreferencesToForm(savedPreferences);
+  updateShellVisibility();
+  setActivePanel("practice");
+  handleResponsiveLayout();
+  setVoiceState("idle");
+  stopWaveformAnimation();
 
   await hydrateAuthState();
   await refreshSessionList();
