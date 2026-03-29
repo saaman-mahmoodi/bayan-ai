@@ -299,6 +299,78 @@ ipcMain.handle("pipeline:get-config", () => ({
   backendUrl: BACKEND_URL
 }));
 
+ipcMain.handle("plugins:list", async () => {
+  return backendRequest("/api/plugins", { method: "GET" });
+});
+
+ipcMain.handle("intelligence:profile", async (_event, payload) => {
+  return backendRequest("/api/intelligence/profile", {
+    method: "GET",
+    token: payload?.token
+  });
+});
+
+ipcMain.handle("intelligence:errors", async (_event, payload) => {
+  return backendRequest("/api/intelligence/errors", {
+    method: "GET",
+    token: payload?.token
+  });
+});
+
+ipcMain.handle("intelligence:curriculum", async (_event, payload) => {
+  const goalId = payload?.goalId ? `?goalId=${payload.goalId}` : "";
+  return backendRequest(`/api/intelligence/curriculum${goalId}`, {
+    method: "GET",
+    token: payload?.token
+  });
+});
+
+ipcMain.handle("intelligence:curriculum:generate", async (_event, payload) => {
+  return backendRequest("/api/intelligence/curriculum/generate", {
+    method: "POST",
+    token: payload?.token,
+    body: { goalId: payload?.goalId || null }
+  });
+});
+
+ipcMain.handle("intelligence:curriculum:complete-step", async (_event, payload) => {
+  return backendRequest("/api/intelligence/curriculum/complete-step", {
+    method: "POST",
+    token: payload?.token,
+    body: { stepId: payload?.stepId }
+  });
+});
+
+ipcMain.handle("intelligence:goals:list", async (_event, payload) => {
+  return backendRequest("/api/intelligence/goals", {
+    method: "GET",
+    token: payload?.token
+  });
+});
+
+ipcMain.handle("intelligence:goals:create", async (_event, payload) => {
+  return backendRequest("/api/intelligence/goals", {
+    method: "POST",
+    token: payload?.token,
+    body: {
+      goalType: payload?.goalType,
+      goalLabel: payload?.goalLabel,
+      targetCefr: payload?.targetCefr || null
+    }
+  });
+});
+
+ipcMain.handle("intelligence:goals:delete", async (_event, payload) => {
+  const goalId = Number(payload?.goalId);
+  if (!goalId) {
+    throw new Error("goalId is required");
+  }
+  return backendRequest(`/api/intelligence/goals/${goalId}`, {
+    method: "DELETE",
+    token: payload?.token
+  });
+});
+
 app.whenReady().then(() => {
   createWindow();
 

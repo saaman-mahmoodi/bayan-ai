@@ -14,5 +14,14 @@ contextBridge.exposeInMainWorld("bayan", {
   getProgressSummary: (payload) => ipcRenderer.invoke("progress:summary", payload),
   processAssessmentAudio: (payload) => ipcRenderer.invoke("assessment:process-audio", payload),
   processAudio: (payload) => ipcRenderer.invoke("pipeline:process-audio", payload),
-  getConfig: () => ipcRenderer.invoke("pipeline:get-config")
+  getConfig: () => ipcRenderer.invoke("pipeline:get-config"),
+  listPlugins: () => ipcRenderer.invoke("plugins:list"),
+  getIntelligenceProfile: (payload) => ipcRenderer.invoke("intelligence:profile", payload),
+  getErrorClusters: (payload) => ipcRenderer.invoke("intelligence:errors", payload),
+  getCurriculum: (payload) => ipcRenderer.invoke("intelligence:curriculum", payload),
+  generateCurriculum: (payload) => ipcRenderer.invoke("intelligence:curriculum:generate", payload),
+  completeCurriculumStep: (payload) => ipcRenderer.invoke("intelligence:curriculum:complete-step", payload),
+  listGoals: (payload) => ipcRenderer.invoke("intelligence:goals:list", payload),
+  createGoal: (payload) => ipcRenderer.invoke("intelligence:goals:create", payload),
+  deleteGoal: (payload) => ipcRenderer.invoke("intelligence:goals:delete", payload)
 });

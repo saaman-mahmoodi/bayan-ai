@@ -50,6 +50,10 @@
               <span class="navIcon">◔</span>
               <span class="navLabel">Progress</span>
             </button>
+            <button type="button" class="navButton" data-panel="intelligence" title="Intelligence" aria-label="Intelligence">
+              <span class="navIcon">✦</span>
+              <span class="navLabel">Intelligence</span>
+            </button>
             <button type="button" class="navButton" data-panel="settings" title="Settings" aria-label="Settings">
               <span class="navIcon">⚙</span>
               <span class="navLabel">Settings</span>
@@ -223,6 +227,91 @@
                 <li>Sign in to view saved sessions.</li>
               </ul>
             </section>
+          </div>
+        </section>
+
+        <section class="panel panelIntelligence" data-panel="intelligence">
+          <div class="dashboardGrid">
+
+            <section class="shellCard panelCard intelligenceProfileCard">
+              <div class="sectionHeader">
+                <div>
+                  <p class="eyebrow">Learning Profile</p>
+                  <h3>Personalised insights</h3>
+                </div>
+                <p id="intelligenceProfileStatus" class="status compactStatus">Sign in to load profile.</p>
+              </div>
+              <div class="statTiles">
+                <article class="statTile"><span>Total turns</span><strong id="profileTotalTurns">-</strong></article>
+                <article class="statTile"><span>Grammar issues</span><strong id="profileGrammarCount">-</strong></article>
+                <article class="statTile"><span>Pronunciation issues</span><strong id="profilePronunciationCount">-</strong></article>
+              </div>
+              <div class="profileAreaTiles">
+                <div>
+                  <p class="eyebrow">Weak areas</p>
+                  <ul id="profileWeakAreas" class="listBlock areaList"><li>-</li></ul>
+                </div>
+                <div>
+                  <p class="eyebrow">Strong areas</p>
+                  <ul id="profileStrongAreas" class="listBlock areaList"><li>-</li></ul>
+                </div>
+              </div>
+            </section>
+
+            <section class="shellCard panelCard">
+              <div class="sectionHeader">
+                <div>
+                  <p class="eyebrow">Error Clusters</p>
+                  <h3>Recurring mistake patterns</h3>
+                </div>
+              </div>
+              <div id="errorClustersContainer">
+                <p class="status compactStatus">No error data yet. Complete practice turns to populate.</p>
+              </div>
+            </section>
+
+            <section class="shellCard panelCard">
+              <div class="sectionHeader">
+                <div>
+                  <p class="eyebrow">Learning Goals</p>
+                  <h3>Goal-based learning paths</h3>
+                </div>
+              </div>
+              <form id="goalForm" class="goalForm">
+                <select id="goalType" class="goalSelect">
+                  <option value="cefr_target">Reach CEFR level</option>
+                  <option value="ielts">Pass IELTS</option>
+                  <option value="business_fluency">Business fluency</option>
+                  <option value="travel">Travel conversations</option>
+                  <option value="custom">Custom goal</option>
+                </select>
+                <input id="goalLabel" type="text" placeholder="e.g. Reach B2 in English" class="goalInput" />
+                <select id="goalTargetCefr" class="goalSelect">
+                  <option value="">No CEFR target</option>
+                  <option value="A1">A1</option>
+                  <option value="A2">A2</option>
+                  <option value="B1">B1</option>
+                  <option value="B2">B2</option>
+                  <option value="C1">C1</option>
+                  <option value="C2">C2</option>
+                </select>
+                <button type="submit" id="createGoalButton" class="primaryButton subtleButton">Set Goal</button>
+              </form>
+              <ul id="goalList" class="listBlock goalList"><li>No active goals.</li></ul>
+            </section>
+
+            <section class="shellCard panelCard">
+              <div class="sectionHeader">
+                <div>
+                  <p class="eyebrow">Adaptive Curriculum</p>
+                  <h3>Your personalised learning path</h3>
+                </div>
+                <button id="generateCurriculumButton" type="button" class="secondaryButton">Regenerate</button>
+              </div>
+              <p id="curriculumStatus" class="status compactStatus">Sign in to load curriculum.</p>
+              <ul id="curriculumStepList" class="listBlock curriculumList"><li>No steps yet.</li></ul>
+            </section>
+
           </div>
         </section>
 

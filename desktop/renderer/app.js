@@ -39,6 +39,22 @@ const lastActiveDayEl = document.getElementById("lastActiveDay");
 const progressTrendsEl = document.getElementById("progressTrends");
 const recurringIssuesEl = document.getElementById("recurringIssues");
 
+const intelligenceProfileStatusEl = document.getElementById("intelligenceProfileStatus");
+const profileTotalTurnsEl = document.getElementById("profileTotalTurns");
+const profileGrammarCountEl = document.getElementById("profileGrammarCount");
+const profilePronunciationCountEl = document.getElementById("profilePronunciationCount");
+const profileWeakAreasEl = document.getElementById("profileWeakAreas");
+const profileStrongAreasEl = document.getElementById("profileStrongAreas");
+const errorClustersContainerEl = document.getElementById("errorClustersContainer");
+const goalFormEl = document.getElementById("goalForm");
+const goalTypeEl = document.getElementById("goalType");
+const goalLabelEl = document.getElementById("goalLabel");
+const goalTargetCefrEl = document.getElementById("goalTargetCefr");
+const goalListEl = document.getElementById("goalList");
+const generateCurriculumButtonEl = document.getElementById("generateCurriculumButton");
+const curriculumStatusEl = document.getElementById("curriculumStatus");
+const curriculumStepListEl = document.getElementById("curriculumStepList");
+
 const captureMsEl = document.getElementById("captureMs");
 const sttMsEl = document.getElementById("sttMs");
 const llmMsEl = document.getElementById("llmMs");
@@ -67,6 +83,7 @@ const AUTH_STORAGE_KEY = "bayan.auth.v1";
 const PANEL_TITLES = {
   practice: "Practice",
   progress: "Progress",
+  intelligence: "Intelligence",
   settings: "Settings"
 };
 
@@ -348,6 +365,278 @@ function renderSystemValidation(validation) {
     item.textContent = `${check.ok ? "OK" : "Warn"}: ${check.message}`;
     item.className = check.ok ? "checkOk" : "checkWarn";
     systemChecksEl.appendChild(item);
+  }
+}
+
+function renderAreaList(el, areas) {
+  el.innerHTML = "";
+  if (!areas.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "-";
+    el.appendChild(empty);
+    return;
+  }
+  for (const area of areas) {
+    const item = document.createElement("li");
+    item.textContent = area;
+    el.appendChild(item);
+  }
+}
+
+function renderIntelligenceProfile(profile) {
+  if (!profile) {
+    profileTotalTurnsEl.textContent = "-";
+    profileGrammarCountEl.textContent = "-";
+    profilePronunciationCountEl.textContent = "-";
+    renderAreaList(profileWeakAreasEl, []);
+    renderAreaList(profileStrongAreasEl, []);
+    return;
+  }
+
+  profileTotalTurnsEl.textContent = String(profile.totalTurns || 0);
+  profileGrammarCountEl.textContent = String(profile.mistakeCountGrammar || 0);
+  profilePronunciationCountEl.textContent = String(profile.mistakeCountPronunciation || 0);
+  renderAreaList(profileWeakAreasEl, Array.isArray(profile.weakAreas) ? profile.weakAreas : []);
+  renderAreaList(profileStrongAreasEl, Array.isArray(profile.strongAreas) ? profile.strongAreas : []);
+}
+
+function renderErrorClusters(clusters) {
+  errorClustersContainerEl.innerHTML = "";
+
+  const categories = ["grammar", "pronunciation", "vocabulary"];
+  let hasAny = false;
+
+  for (const cat of categories) {
+    const items = Array.isArray(clusters?.[cat]) ? clusters[cat] : [];
+    if (!items.length) {
+      continue;
+    }
+    hasAny = true;
+
+    const section = document.createElement("div");
+    section.className = "clusterSection";
+
+    const heading = document.createElement("p");
+    heading.className = "eyebrow";
+    heading.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+    section.appendChild(heading);
+
+    const list = document.createElement("ul");
+    list.className = "listBlock";
+
+    for (const item of items.slice(0, 5)) {
+      const li = document.createElement("li");
+      li.textContent = `${item.exampleText.slice(0, 80)} (${item.count}x)`;
+      list.appendChild(li);
+    }
+
+    section.appendChild(list);
+    errorClustersContainerEl.appendChild(section);
+  }
+
+  if (!hasAny) {
+    const empty = document.createElement("p");
+    empty.className = "status compactStatus";
+    empty.textContent = "No error data yet. Complete practice turns to populate.";
+    errorClustersContainerEl.appendChild(empty);
+  }
+}
+
+function renderGoalList(goals) {
+  goalListEl.innerHTML = "";
+  if (!goals.length) {
+    const empty = document.createElement("li");
+    empty.textContent = activeToken ? "No active goals. Set one above." : "Sign in to view goals.";
+    goalListEl.appendChild(empty);
+    return;
+  }
+
+  for (const goal of goals) {
+    const item = document.createElement("li");
+    item.className = "goalItem";
+
+    const label = document.createElement("span");
+    label.textContent = goal.goalLabel;
+    if (goal.targetCefr) {
+      label.textContent += ` (target: ${goal.targetCefr})`;
+    }
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "linkButton deleteGoalButton";
+    deleteBtn.textContent = "Remove";
+    deleteBtn.addEventListener("click", () => {
+      void handleDeleteGoal(goal.id);
+    });
+
+    item.appendChild(label);
+    item.appendChild(deleteBtn);
+    goalListEl.appendChild(item);
+  }
+}
+
+function renderCurriculumSteps(steps) {
+  curriculumStepListEl.innerHTML = "";
+  if (!steps.length) {
+    const empty = document.createElement("li");
+    empty.textContent = activeToken ? "No curriculum steps yet. Generate one below." : "Sign in to view curriculum.";
+    curriculumStepListEl.appendChild(empty);
+    return;
+  }
+
+  for (const step of steps) {
+    const item = document.createElement("li");
+    item.className = `curriculumStep ${step.status}`;
+
+    const header = document.createElement("strong");
+    header.textContent = `${step.stepIndex + 1}. ${step.title}`;
+    header.className = "stepTitle";
+
+    const desc = document.createElement("p");
+    desc.className = "stepDesc";
+    desc.textContent = step.description;
+
+    const meta = document.createElement("small");
+    meta.textContent = `Focus: ${step.focusArea} · ${step.status}`;
+
+    item.appendChild(header);
+    item.appendChild(desc);
+    item.appendChild(meta);
+
+    if (step.status === "pending") {
+      const completeBtn = document.createElement("button");
+      completeBtn.type = "button";
+      completeBtn.className = "linkButton";
+      completeBtn.textContent = "Mark complete";
+      completeBtn.addEventListener("click", () => {
+        void handleCompleteStep(step.id);
+      });
+      item.appendChild(completeBtn);
+    }
+
+    curriculumStepListEl.appendChild(item);
+  }
+}
+
+async function hydrateIntelligencePanel() {
+  if (!activeToken) {
+    intelligenceProfileStatusEl.textContent = "Sign in to load profile.";
+    renderIntelligenceProfile(null);
+    renderErrorClusters(null);
+    renderGoalList([]);
+    renderCurriculumSteps([]);
+    curriculumStatusEl.textContent = "Sign in to load curriculum.";
+    return;
+  }
+
+  try {
+    const [profileResult, errorsResult, goalsResult, curriculumResult] = await Promise.allSettled([
+      window.bayan.getIntelligenceProfile({ token: activeToken }),
+      window.bayan.getErrorClusters({ token: activeToken }),
+      window.bayan.listGoals({ token: activeToken }),
+      window.bayan.getCurriculum({ token: activeToken })
+    ]);
+
+    if (profileResult.status === "fulfilled") {
+      renderIntelligenceProfile(profileResult.value.profile || null);
+      intelligenceProfileStatusEl.textContent = "Profile loaded.";
+    } else {
+      intelligenceProfileStatusEl.textContent = `Profile unavailable: ${profileResult.reason?.message}`;
+    }
+
+    if (errorsResult.status === "fulfilled") {
+      renderErrorClusters(errorsResult.value.clusters || null);
+    }
+
+    if (goalsResult.status === "fulfilled") {
+      renderGoalList(Array.isArray(goalsResult.value.goals) ? goalsResult.value.goals : []);
+    }
+
+    if (curriculumResult.status === "fulfilled") {
+      const steps = Array.isArray(curriculumResult.value.steps) ? curriculumResult.value.steps : [];
+      renderCurriculumSteps(steps);
+      curriculumStatusEl.textContent = steps.length ? `${steps.length} step${steps.length === 1 ? "" : "s"} loaded.` : "No steps yet.";
+    } else {
+      curriculumStatusEl.textContent = `Curriculum unavailable: ${curriculumResult.reason?.message}`;
+    }
+  } catch (error) {
+    intelligenceProfileStatusEl.textContent = `Load failed: ${error.message}`;
+  }
+}
+
+async function handleGenerateCurriculum() {
+  if (!activeToken) {
+    curriculumStatusEl.textContent = "Sign in to generate curriculum.";
+    return;
+  }
+
+  curriculumStatusEl.textContent = "Generating...";
+  try {
+    const result = await window.bayan.generateCurriculum({ token: activeToken });
+    const steps = Array.isArray(result.steps) ? result.steps : [];
+    renderCurriculumSteps(steps);
+    curriculumStatusEl.textContent = `Curriculum regenerated: ${steps.length} steps.`;
+  } catch (error) {
+    curriculumStatusEl.textContent = `Generate failed: ${error.message}`;
+  }
+}
+
+async function handleCompleteStep(stepId) {
+  if (!activeToken || !stepId) {
+    return;
+  }
+
+  try {
+    await window.bayan.completeCurriculumStep({ token: activeToken, stepId });
+    const result = await window.bayan.getCurriculum({ token: activeToken });
+    renderCurriculumSteps(Array.isArray(result.steps) ? result.steps : []);
+  } catch (error) {
+    curriculumStatusEl.textContent = `Complete step failed: ${error.message}`;
+  }
+}
+
+async function handleCreateGoal(event) {
+  event.preventDefault();
+  if (!activeToken) {
+    return;
+  }
+
+  const goalLabel = (goalLabelEl.value || "").trim();
+  if (!goalLabel) {
+    return;
+  }
+
+  try {
+    const result = await window.bayan.createGoal({
+      token: activeToken,
+      goalType: goalTypeEl.value,
+      goalLabel,
+      targetCefr: goalTargetCefrEl.value || null
+    });
+
+    goalLabelEl.value = "";
+    const goalsResult = await window.bayan.listGoals({ token: activeToken });
+    renderGoalList(Array.isArray(goalsResult.goals) ? goalsResult.goals : []);
+
+    const steps = Array.isArray(result.steps) ? result.steps : [];
+    renderCurriculumSteps(steps);
+    curriculumStatusEl.textContent = `Goal set. Curriculum updated: ${steps.length} steps.`;
+  } catch (error) {
+    curriculumStatusEl.textContent = `Goal creation failed: ${error.message}`;
+  }
+}
+
+async function handleDeleteGoal(goalId) {
+  if (!activeToken || !goalId) {
+    return;
+  }
+
+  try {
+    await window.bayan.deleteGoal({ token: activeToken, goalId });
+    const goalsResult = await window.bayan.listGoals({ token: activeToken });
+    renderGoalList(Array.isArray(goalsResult.goals) ? goalsResult.goals : []);
+  } catch (error) {
+    curriculumStatusEl.textContent = `Remove goal failed: ${error.message}`;
   }
 }
 
@@ -772,6 +1061,7 @@ async function handleAuth(action) {
     await refreshSessionList();
     await hydrateLatestAssessment();
     await hydrateProgressSummary();
+    await hydrateIntelligencePanel();
     setStatus(`Authenticated as ${result.user.email}`);
   } catch (error) {
     setAuthStatus(`Auth error: ${error.message}`);
@@ -796,6 +1086,7 @@ async function handleLogout() {
   setProgressStatus("Sign in to load progress dashboard.");
   renderProgressSummary(null);
   renderSessionList([]);
+  hydrateIntelligencePanel();
   clearMessages();
   setVoiceState("idle");
   stopWaveformAnimation();
@@ -871,6 +1162,14 @@ startAssessmentButton.addEventListener("click", () => {
   void startAssessment();
 });
 
+goalFormEl.addEventListener("submit", (event) => {
+  void handleCreateGoal(event);
+});
+
+generateCurriculumButtonEl.addEventListener("click", () => {
+  void handleGenerateCurriculum();
+});
+
 topSettingsButton.addEventListener("click", () => {
   setActivePanel("settings");
 });
@@ -924,6 +1223,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   await hydrateLatestAssessment();
   await hydrateSystemValidation();
   await hydrateProgressSummary();
+  await hydrateIntelligencePanel();
 
   if (activeToken) {
     setAssessmentStatus("Ready to start assessment.");

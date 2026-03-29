@@ -7,6 +7,8 @@ const { performance } = require("perf_hooks");
 const { randomBytes } = require("crypto");
 const bcrypt = require("bcryptjs");
 const sqlite3 = require("sqlite3").verbose();
+const { registry: pluginRegistry } = require("./plugin-api");
+const { loadPlugins } = require("./plugin-loader");
 
 const PORT = Number(process.env.PORT || 8787);
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
@@ -523,7 +525,7 @@ async function scoreAssessment(turns = [], preferences = {}) {
   const vocabularyScore = clampScore(rules.vocabularyScore * 0.4 + llm.vocabularyScore * 0.6);
   const overallScore = clampScore(speakingScore * 0.4 + grammarScore * 0.35 + vocabularyScore * 0.25);
 
-  return {
+  let scoreContext = await pluginRegistry.runHook("onScore", {
     cefrLevel: scoreToCefrLevel(overallScore),
     overallScore,
     speakingScore,
@@ -534,7 +536,9 @@ async function scoreAssessment(turns = [], preferences = {}) {
       llm,
       rules
     }
-  };
+  });
+
+  return scoreContext;
 }
 
 async function getLatestAssessmentForUser(userId) {
@@ -693,6 +697,66 @@ async function initDatabase() {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id),
       FOREIGN KEY(assessment_session_id) REFERENCES assessment_sessions(id)
+    )
+  `);
+
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS learning_profile (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER UNIQUE NOT NULL,
+      weak_areas TEXT NOT NULL DEFAULT '[]',
+      strong_areas TEXT NOT NULL DEFAULT '[]',
+      mistake_count_grammar INTEGER NOT NULL DEFAULT 0,
+      mistake_count_pronunciation INTEGER NOT NULL DEFAULT 0,
+      mistake_count_vocabulary INTEGER NOT NULL DEFAULT 0,
+      total_turns INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    )
+  `);
+
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS error_clusters (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      category TEXT NOT NULL,
+      token TEXT NOT NULL,
+      example_text TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 1,
+      last_seen_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, category, token),
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    )
+  `);
+
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS learning_goals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      goal_type TEXT NOT NULL,
+      goal_label TEXT NOT NULL,
+      target_cefr TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      completed_at TEXT,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    )
+  `);
+
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS curriculum_steps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      goal_id INTEGER,
+      step_index INTEGER NOT NULL DEFAULT 0,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      focus_area TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      completed_at TEXT,
+      FOREIGN KEY(user_id) REFERENCES users(id),
+      FOREIGN KEY(goal_id) REFERENCES learning_goals(id)
     )
   `);
 }
@@ -1081,14 +1145,21 @@ async function generateReply(transcript, preferences = {}) {
   const targetLanguage = preferences.targetLanguage || "English";
   const nativeLanguage = preferences.nativeLanguage || "Arabic";
 
-  const prompt = [
-    "You are a concise language tutor.",
-    `Target language: ${targetLanguage}.`,
-    `Learner native language: ${nativeLanguage}.`,
-    "Return valid JSON with keys: reply, grammarCorrection, pronunciationSuggestions.",
-    "pronunciationSuggestions must be a short array of strings.",
-    `Learner: ${transcript}`
-  ].join("\n");
+  let promptContext = await pluginRegistry.runHook("onPrompt", {
+    prompt: [
+      "You are a concise language tutor.",
+      `Target language: ${targetLanguage}.`,
+      `Learner native language: ${nativeLanguage}.`,
+      "Return valid JSON with keys: reply, grammarCorrection, pronunciationSuggestions.",
+      "pronunciationSuggestions must be a short array of strings.",
+      `Learner: ${transcript}`
+    ].join("\n"),
+    transcript,
+    targetLanguage,
+    nativeLanguage
+  });
+
+  const prompt = promptContext.prompt;
 
   try {
     const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
@@ -1104,11 +1175,26 @@ async function generateReply(transcript, preferences = {}) {
     if (response.ok) {
       const data = await response.json();
       const parsed = parseTutorPayload(data.response || "");
-      const feedback = normalizeFeedback(parsed);
+      let replyContext = await pluginRegistry.runHook("onReply", {
+        reply: parsed?.reply || data.response || "I heard you.",
+        raw: data.response || "",
+        transcript,
+        targetLanguage,
+        nativeLanguage
+      });
+      let feedbackContext = await pluginRegistry.runHook("onFeedback", {
+        ...normalizeFeedback(parsed),
+        transcript,
+        targetLanguage,
+        nativeLanguage
+      });
       const llmMs = Math.round(performance.now() - llmStart);
       return {
-        reply: parsed?.reply || data.response || "I heard you.",
-        feedback,
+        reply: replyContext.reply,
+        feedback: {
+          grammarCorrection: feedbackContext.grammarCorrection,
+          pronunciationSuggestions: feedbackContext.pronunciationSuggestions
+        },
         timings: { llmMs },
         model: OLLAMA_MODEL,
         source: "ollama"
@@ -1184,6 +1270,350 @@ async function synthesizeSpeech(text) {
     mimeType: null,
     source: "fallback"
   };
+}
+
+const GOAL_TYPES = ["cefr_target", "ielts", "business_fluency", "travel", "custom"];
+const FOCUS_AREAS = ["grammar", "pronunciation", "vocabulary", "fluency", "listening"];
+
+const CURRICULUM_TEMPLATES = {
+  grammar: [
+    { title: "Sentence structure basics", description: "Practice forming clear subject-verb-object sentences with consistent tense." },
+    { title: "Common grammar patterns", description: "Drill the top 5 grammar patterns you most frequently misuse." },
+    { title: "Complex sentence construction", description: "Combine simple sentences using conjunctions and subordinating clauses." }
+  ],
+  pronunciation: [
+    { title: "Minimal pair drilling", description: "Focus on sound pairs that you frequently confuse in your target language." },
+    { title: "Sentence-level rhythm", description: "Practice stress and intonation patterns at the sentence level." },
+    { title: "Connected speech", description: "Practise linking words naturally at a conversational pace." }
+  ],
+  vocabulary: [
+    { title: "High-frequency word consolidation", description: "Actively use the top 200 most common words in spoken sentences." },
+    { title: "Topic vocabulary expansion", description: "Build vocabulary around your target use case (travel, work, daily life)." },
+    { title: "Collocation practice", description: "Learn which words naturally go together to sound more native." }
+  ],
+  fluency: [
+    { title: "Sustained speaking practice", description: "Speak for 90 seconds continuously on a given topic without pausing." },
+    { title: "Response speed drills", description: "Reduce reaction time before answering a question to under 3 seconds." },
+    { title: "Filler phrase reduction", description: "Identify and reduce overused filler words or hesitation sounds." }
+  ],
+  listening: [
+    { title: "Active comprehension checks", description: "Summarise what you heard at the end of each Bayan response." },
+    { title: "Transcription practice", description: "Write out Bayan's reply from memory after it is spoken." },
+    { title: "Speed adaptation", description: "Try to follow faster speech by requesting Bayan to increase detail level." }
+  ]
+};
+
+function buildErrorClusterToken(text) {
+  return String(text || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .slice(0, 100);
+}
+
+async function upsertLearningProfile(userId) {
+  await dbRun(
+    `
+      INSERT INTO learning_profile (user_id, updated_at)
+      VALUES (?, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id) DO NOTHING
+    `,
+    [userId]
+  );
+}
+
+async function updateLearningProfileFromTurn(userId, feedback) {
+  await upsertLearningProfile(userId);
+
+  const grammar = String(feedback?.grammarCorrection || "").trim();
+  const suggestions = Array.isArray(feedback?.pronunciationSuggestions) ? feedback.pronunciationSuggestions : [];
+
+  const grammarIncrement = grammar && grammar.length > 8 ? 1 : 0;
+  const pronunciationIncrement = suggestions.length > 0 ? 1 : 0;
+
+  await dbRun(
+    `
+      UPDATE learning_profile
+      SET
+        mistake_count_grammar = mistake_count_grammar + ?,
+        mistake_count_pronunciation = mistake_count_pronunciation + ?,
+        total_turns = total_turns + 1,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ?
+    `,
+    [grammarIncrement, pronunciationIncrement, userId]
+  );
+
+  if (grammar && grammarIncrement) {
+    const token = buildErrorClusterToken(grammar);
+    await dbRun(
+      `
+        INSERT INTO error_clusters (user_id, category, token, example_text, count, last_seen_at)
+        VALUES (?, 'grammar', ?, ?, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id, category, token) DO UPDATE SET
+          count = count + 1,
+          last_seen_at = CURRENT_TIMESTAMP
+      `,
+      [userId, token, grammar.slice(0, 300)]
+    );
+  }
+
+  for (const suggestion of suggestions) {
+    const text = String(suggestion || "").trim();
+    if (!text) {
+      continue;
+    }
+    const token = buildErrorClusterToken(text);
+    await dbRun(
+      `
+        INSERT INTO error_clusters (user_id, category, token, example_text, count, last_seen_at)
+        VALUES (?, 'pronunciation', ?, ?, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id, category, token) DO UPDATE SET
+          count = count + 1,
+          last_seen_at = CURRENT_TIMESTAMP
+      `,
+      [userId, token, text.slice(0, 300)]
+    );
+  }
+}
+
+async function updateLearningProfileFromAssessment(userId, assessmentResult) {
+  await upsertLearningProfile(userId);
+
+  const weakAreas = [];
+  const strongAreas = [];
+
+  const thresholdWeak = 45;
+  const thresholdStrong = 70;
+
+  const dimensions = [
+    { key: "grammar", score: assessmentResult.grammarScore },
+    { key: "vocabulary", score: assessmentResult.vocabularyScore },
+    { key: "fluency", score: assessmentResult.speakingScore }
+  ];
+
+  for (const { key, score } of dimensions) {
+    if (score <= thresholdWeak) {
+      weakAreas.push(key);
+    } else if (score >= thresholdStrong) {
+      strongAreas.push(key);
+    }
+  }
+
+  if (assessmentResult.grammarScore < thresholdStrong) {
+    await dbRun(
+      `
+        UPDATE learning_profile
+        SET
+          mistake_count_grammar = mistake_count_grammar + ?,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = ?
+      `,
+      [Math.round((100 - assessmentResult.grammarScore) / 20), userId]
+    );
+  }
+
+  await dbRun(
+    `
+      UPDATE learning_profile
+      SET
+        weak_areas = ?,
+        strong_areas = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ?
+    `,
+    [JSON.stringify(weakAreas), JSON.stringify(strongAreas), userId]
+  );
+}
+
+async function getLearningProfile(userId) {
+  await upsertLearningProfile(userId);
+
+  const row = await dbGet(
+    `
+      SELECT
+        weak_areas AS weakAreas,
+        strong_areas AS strongAreas,
+        mistake_count_grammar AS mistakeCountGrammar,
+        mistake_count_pronunciation AS mistakeCountPronunciation,
+        mistake_count_vocabulary AS mistakeCountVocabulary,
+        total_turns AS totalTurns,
+        updated_at AS updatedAt
+      FROM learning_profile
+      WHERE user_id = ?
+    `,
+    [userId]
+  );
+
+  if (!row) {
+    return {
+      weakAreas: [],
+      strongAreas: [],
+      mistakeCountGrammar: 0,
+      mistakeCountPronunciation: 0,
+      mistakeCountVocabulary: 0,
+      totalTurns: 0,
+      updatedAt: null
+    };
+  }
+
+  return {
+    weakAreas: parseJsonList(row.weakAreas),
+    strongAreas: parseJsonList(row.strongAreas),
+    mistakeCountGrammar: row.mistakeCountGrammar,
+    mistakeCountPronunciation: row.mistakeCountPronunciation,
+    mistakeCountVocabulary: row.mistakeCountVocabulary,
+    totalTurns: row.totalTurns,
+    updatedAt: row.updatedAt
+  };
+}
+
+async function getErrorClusters(userId) {
+  const rows = await dbAll(
+    `
+      SELECT
+        id,
+        category,
+        token,
+        example_text AS exampleText,
+        count,
+        last_seen_at AS lastSeenAt
+      FROM error_clusters
+      WHERE user_id = ?
+      ORDER BY count DESC, datetime(last_seen_at) DESC
+      LIMIT 30
+    `,
+    [userId]
+  );
+
+  const grouped = { grammar: [], pronunciation: [], vocabulary: [] };
+  for (const row of rows) {
+    const cat = row.category || "grammar";
+    if (!grouped[cat]) {
+      grouped[cat] = [];
+    }
+    grouped[cat].push({
+      id: row.id,
+      token: row.token,
+      exampleText: row.exampleText,
+      count: row.count,
+      lastSeenAt: row.lastSeenAt
+    });
+  }
+
+  return grouped;
+}
+
+async function generateAdaptiveCurriculum(userId, goalId = null) {
+  const profile = await getLearningProfile(userId);
+  const clusters = await getErrorClusters(userId);
+
+  const primaryFocusAreas = [...profile.weakAreas];
+
+  if (!primaryFocusAreas.length) {
+    const mistakeCounts = [
+      { area: "grammar", count: profile.mistakeCountGrammar },
+      { area: "pronunciation", count: profile.mistakeCountPronunciation },
+      { area: "vocabulary", count: profile.mistakeCountVocabulary }
+    ];
+    mistakeCounts.sort((a, b) => b.count - a.count);
+    if (mistakeCounts[0].count > 0) {
+      primaryFocusAreas.push(mistakeCounts[0].area);
+    }
+  }
+
+  if (!primaryFocusAreas.length) {
+    primaryFocusAreas.push("fluency");
+  }
+
+  const steps = [];
+  let stepIndex = 0;
+
+  for (const area of primaryFocusAreas.slice(0, 2)) {
+    const templates = CURRICULUM_TEMPLATES[area] || CURRICULUM_TEMPLATES.fluency;
+    for (const template of templates) {
+      steps.push({
+        stepIndex,
+        title: template.title,
+        description: template.description,
+        focusArea: area
+      });
+      stepIndex += 1;
+    }
+  }
+
+  if (steps.length < 3) {
+    const fillArea = FOCUS_AREAS.find((a) => !primaryFocusAreas.includes(a)) || "fluency";
+    const fillTemplates = CURRICULUM_TEMPLATES[fillArea] || [];
+    for (const template of fillTemplates.slice(0, 3 - steps.length)) {
+      steps.push({
+        stepIndex,
+        title: template.title,
+        description: template.description,
+        focusArea: fillArea
+      });
+      stepIndex += 1;
+    }
+  }
+
+  await dbRun(
+    "DELETE FROM curriculum_steps WHERE user_id = ? AND goal_id IS ?",
+    [userId, goalId]
+  );
+
+  for (const step of steps) {
+    await dbRun(
+      `
+        INSERT INTO curriculum_steps (user_id, goal_id, step_index, title, description, focus_area, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)
+      `,
+      [userId, goalId, step.stepIndex, step.title, step.description, step.focusArea]
+    );
+  }
+
+  return steps;
+}
+
+async function getCurriculumSteps(userId, goalId = null) {
+  const rows = await dbAll(
+    `
+      SELECT
+        id,
+        goal_id AS goalId,
+        step_index AS stepIndex,
+        title,
+        description,
+        focus_area AS focusArea,
+        status,
+        created_at AS createdAt,
+        completed_at AS completedAt
+      FROM curriculum_steps
+      WHERE user_id = ? AND goal_id IS ?
+      ORDER BY step_index ASC
+    `,
+    [userId, goalId]
+  );
+
+  return rows;
+}
+
+async function getActiveGoals(userId) {
+  return dbAll(
+    `
+      SELECT
+        id,
+        goal_type AS goalType,
+        goal_label AS goalLabel,
+        target_cefr AS targetCefr,
+        status,
+        created_at AS createdAt,
+        completed_at AS completedAt
+      FROM learning_goals
+      WHERE user_id = ? AND status = 'active'
+      ORDER BY datetime(created_at) DESC
+    `,
+    [userId]
+  );
 }
 
 const server = http.createServer(async (req, res) => {
@@ -1392,6 +1822,10 @@ const server = http.createServer(async (req, res) => {
         "INSERT INTO progress_snapshots (user_id, metric_key, metric_value, recorded_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
         [auth.user.id, "assessment.vocabulary", assessmentResult.vocabularyScore]
       );
+
+      updateLearningProfileFromAssessment(auth.user.id, assessmentResult).catch((error) => {
+        console.warn(`[bayan-backend] learning profile assessment update failed: ${error.message}`);
+      });
 
       sendJson(res, 200, {
         ...result,
@@ -1683,6 +2117,21 @@ const server = http.createServer(async (req, res) => {
 
         await dbRun("UPDATE practice_sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", [sessionId]);
 
+        updateLearningProfileFromTurn(auth.user.id, result.feedback).catch((error) => {
+          console.warn(`[bayan-backend] learning profile update failed: ${error.message}`);
+        });
+
+        pluginRegistry.runHook("onTurnSaved", {
+          userId: auth.user.id,
+          sessionId,
+          turnId: insert.lastID,
+          transcript: body.transcript,
+          reply: result.reply,
+          feedback: result.feedback
+        }).catch((error) => {
+          console.warn(`[bayan-plugins] onTurnSaved hook error: ${error.message}`);
+        });
+
         sendJson(res, 200, {
           ...result,
           sessionId,
@@ -1720,12 +2169,176 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && req.url === "/api/plugins") {
+    sendJson(res, 200, { plugins: pluginRegistry.getLoadedPlugins() });
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/intelligence/profile") {
+    try {
+      const auth = await requireAuth(req);
+      const profile = await getLearningProfile(auth.user.id);
+      sendJson(res, 200, { profile });
+    } catch (error) {
+      sendJson(res, 401, { error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/intelligence/errors") {
+    try {
+      const auth = await requireAuth(req);
+      const clusters = await getErrorClusters(auth.user.id);
+      sendJson(res, 200, { clusters });
+    } catch (error) {
+      sendJson(res, 401, { error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/intelligence/curriculum") {
+    try {
+      const auth = await requireAuth(req);
+      const urlObj = new URL(req.url, `http://localhost`);
+      const goalId = urlObj.searchParams.get("goalId") ? Number(urlObj.searchParams.get("goalId")) : null;
+      const steps = await getCurriculumSteps(auth.user.id, goalId);
+      sendJson(res, 200, { steps });
+    } catch (error) {
+      sendJson(res, 401, { error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/intelligence/curriculum/generate") {
+    try {
+      const auth = await requireAuth(req);
+      const body = await readJsonBody(req);
+      const goalId = body.goalId ? Number(body.goalId) : null;
+      const steps = await generateAdaptiveCurriculum(auth.user.id, goalId);
+      sendJson(res, 200, { steps });
+    } catch (error) {
+      sendJson(res, 401, { error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/intelligence/curriculum/complete-step") {
+    try {
+      const auth = await requireAuth(req);
+      const body = await readJsonBody(req);
+      const stepId = Number(body.stepId || 0);
+      if (!stepId) {
+        sendJson(res, 400, { error: "stepId is required" });
+        return;
+      }
+
+      const step = await dbGet(
+        "SELECT id FROM curriculum_steps WHERE id = ? AND user_id = ?",
+        [stepId, auth.user.id]
+      );
+      if (!step) {
+        sendJson(res, 404, { error: "step not found" });
+        return;
+      }
+
+      await dbRun(
+        "UPDATE curriculum_steps SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+        [stepId]
+      );
+
+      sendJson(res, 200, { ok: true, stepId });
+    } catch (error) {
+      sendJson(res, 401, { error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/intelligence/goals") {
+    try {
+      const auth = await requireAuth(req);
+      const goals = await getActiveGoals(auth.user.id);
+      sendJson(res, 200, { goals });
+    } catch (error) {
+      sendJson(res, 401, { error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/intelligence/goals") {
+    try {
+      const auth = await requireAuth(req);
+      const body = await readJsonBody(req);
+
+      const goalType = GOAL_TYPES.includes(body.goalType) ? body.goalType : "custom";
+      const goalLabel = String(body.goalLabel || "").trim().slice(0, 100);
+      if (!goalLabel) {
+        sendJson(res, 400, { error: "goalLabel is required" });
+        return;
+      }
+
+      const targetCefr = CEFR_LEVELS.includes(body.targetCefr) ? body.targetCefr : null;
+
+      const created = await dbRun(
+        `
+          INSERT INTO learning_goals (user_id, goal_type, goal_label, target_cefr, status, created_at)
+          VALUES (?, ?, ?, ?, 'active', CURRENT_TIMESTAMP)
+        `,
+        [auth.user.id, goalType, goalLabel, targetCefr]
+      );
+
+      const goalId = created.lastID;
+      const steps = await generateAdaptiveCurriculum(auth.user.id, goalId);
+
+      sendJson(res, 201, {
+        goal: {
+          id: goalId,
+          goalType,
+          goalLabel,
+          targetCefr,
+          status: "active"
+        },
+        steps
+      });
+    } catch (error) {
+      sendJson(res, 401, { error: error.message });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && /^\/api\/intelligence\/goals\/(\d+)$/.test(req.url)) {
+    try {
+      const auth = await requireAuth(req);
+      const goalId = Number(/^\/api\/intelligence\/goals\/(\d+)$/.exec(req.url)[1]);
+
+      const goal = await dbGet(
+        "SELECT id FROM learning_goals WHERE id = ? AND user_id = ?",
+        [goalId, auth.user.id]
+      );
+      if (!goal) {
+        sendJson(res, 404, { error: "goal not found" });
+        return;
+      }
+
+      await dbRun(
+        "UPDATE learning_goals SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+        [goalId]
+      );
+
+      sendJson(res, 200, { ok: true, goalId });
+    } catch (error) {
+      sendJson(res, 401, { error: error.message });
+    }
+    return;
+  }
+
   sendJson(res, 404, { error: "Not found" });
 });
 
 async function startServer() {
   await initDatabase();
   console.log(`[bayan-backend] sqlite db at ${DB_PATH}`);
+
+  loadPlugins();
 
   const startupValidation = await runSystemValidation();
   if (startupValidation.warnings.length) {

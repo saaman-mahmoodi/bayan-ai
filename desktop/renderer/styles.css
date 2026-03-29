@@ -881,6 +881,124 @@ input {
   }
 }
 
+.profileAreaTiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--shell-gap);
+  margin-top: 1rem;
+}
+
+.areaList {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.areaList li {
+  font-size: 0.875rem;
+  color: var(--text-soft);
+}
+
+.clusterSection {
+  margin-bottom: 1rem;
+}
+
+.clusterSection:last-child {
+  margin-bottom: 0;
+}
+
+.goalForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.goalSelect,
+.goalInput {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.goalSelect:focus,
+.goalInput:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.goalList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.goalItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.goalItem:last-child {
+  border-bottom: none;
+}
+
+.deleteGoalButton {
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.curriculumList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.curriculumStep {
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.curriculumStep.completed {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+.stepTitle {
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.stepDesc {
+  font-size: 0.82rem;
+  color: var(--text-soft);
+  margin: 0;
+}
+
+.curriculumStep small {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.curriculumStep .linkButton {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  align-self: flex-start;
+}
+
 @media (max-width: 640px) {
   .loginView,
   .appShell {
